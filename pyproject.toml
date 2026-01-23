@@ -41,8 +41,11 @@ dependencies = [
     "openai>=1.0.0",
     "anthropic>=0.40.0",
 
-    # Vector store (Phase 2)
-    # "chromadb>=0.4.0",
+    # Vector store
+    "chromadb>=0.4.0",
+
+    # PDF parsing
+    "pymupdf>=1.23.0",
 
     # Utilities
     "python-dotenv>=1.0.0",

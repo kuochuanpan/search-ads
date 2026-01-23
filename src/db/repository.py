@@ -49,11 +49,37 @@ def get_db() -> Database:
 class PaperRepository:
     """Repository for Paper CRUD operations."""
 
-    def __init__(self, db: Optional[Database] = None):
-        self.db = db or get_db()
+    def __init__(self, db: Optional[Database] = None, auto_embed: bool = True):
+        """Initialize the paper repository.
 
-    def add(self, paper: Paper) -> Paper:
-        """Add a paper to the database."""
+        Args:
+            db: Database instance (uses global if not provided)
+            auto_embed: Whether to automatically embed papers in vector store
+        """
+        self.db = db or get_db()
+        self.auto_embed = auto_embed
+        self._vector_store = None
+
+    @property
+    def vector_store(self):
+        """Lazy load the vector store."""
+        if self._vector_store is None:
+            from src.db.vector_store import get_vector_store
+            self._vector_store = get_vector_store()
+        return self._vector_store
+
+    def add(self, paper: Paper, embed: Optional[bool] = None) -> Paper:
+        """Add a paper to the database.
+
+        Args:
+            paper: Paper to add
+            embed: Whether to embed in vector store (defaults to self.auto_embed)
+
+        Returns:
+            The added/updated paper
+        """
+        should_embed = embed if embed is not None else self.auto_embed
+
         with self.db.get_session() as session:
             # Check if exists
             existing = session.get(Paper, paper.bibcode)
@@ -66,12 +92,22 @@ class PaperRepository:
                 session.add(existing)
                 session.commit()
                 session.refresh(existing)
-                return existing
+                result = existing
             else:
                 session.add(paper)
                 session.commit()
                 session.refresh(paper)
-                return paper
+                result = paper
+
+        # Embed in vector store if requested
+        if should_embed and result.abstract:
+            try:
+                self.vector_store.embed_paper(result)
+            except Exception as e:
+                # Don't fail the add if embedding fails
+                print(f"Warning: Failed to embed paper {result.bibcode}: {e}")
+
+        return result
 
     def get(self, bibcode: str) -> Optional[Paper]:
         """Get a paper by bibcode."""

@@ -9,6 +9,7 @@ from src.db.repository import (
     ProjectRepository,
     get_db,
 )
+from src.db.vector_store import VectorStore, get_vector_store
 
 __all__ = [
     "ApiUsage",
@@ -23,4 +24,6 @@ __all__ = [
     "PaperRepository",
     "ProjectRepository",
     "get_db",
+    "VectorStore",
+    "get_vector_store",
 ]

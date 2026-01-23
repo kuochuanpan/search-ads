@@ -97,4 +97,5 @@ settings = Settings()
 def ensure_data_dirs():
     """Ensure all data directories exist."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.chroma_path.mkdir(parents=True, exist_ok=True)
     settings.pdfs_path.mkdir(parents=True, exist_ok=True)

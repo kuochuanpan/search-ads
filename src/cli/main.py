@@ -218,9 +218,56 @@ def _display_ranked_paper(ranked: RankedPaper, index: int):
     console.print()
 
 
-def _search_local_database(keywords: list[str], limit: int = 50) -> list[Paper]:
-    """Search the local database using keywords."""
-    paper_repo = PaperRepository()
+def _search_local_database(
+    query: str,
+    keywords: list[str],
+    limit: int = 50,
+    use_vector: bool = True,
+) -> list[Paper]:
+    """Search the local database using vector similarity or keywords.
+
+    Args:
+        query: Full search query for vector search
+        keywords: Keywords for fallback text search
+        limit: Maximum results to return
+        use_vector: Whether to use vector search (falls back to text if unavailable)
+
+    Returns:
+        List of matching papers
+    """
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+
+    # Try vector search first
+    if use_vector:
+        try:
+            vector_store = get_vector_store()
+            vector_count = vector_store.count()
+
+            if vector_count > 0:
+                console.print(f"[dim]Using vector search ({vector_count} embedded papers)[/dim]")
+
+                # Vector search returns bibcodes with distances
+                results = vector_store.search(query, n_results=limit)
+
+                # Fetch full paper objects
+                papers = []
+                for result in results:
+                    paper = paper_repo.get(result["bibcode"])
+                    if paper:
+                        papers.append(paper)
+
+                if papers:
+                    return papers
+
+                console.print("[yellow]No vector results, falling back to text search[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Vector search unavailable: {e}[/yellow]")
+            console.print("[yellow]Falling back to text search[/yellow]")
+
+    # Fallback to keyword-based text search
+    console.print("[dim]Using keyword text search[/dim]")
     results = []
     seen_bibcodes = set()
 
@@ -297,11 +344,17 @@ def find(
             db_count = paper_repo.count()
             console.print(f"[dim]Database has {db_count} papers[/dim]")
 
-            papers = _search_local_database(search_keywords, limit=top_k * 3)
+            papers = _search_local_database(
+                query=search_query,
+                keywords=search_keywords,
+                limit=top_k * 3,
+                use_vector=True,
+            )
 
             if not papers:
                 console.print("[yellow]No papers found in local database[/yellow]")
                 console.print("[dim]Try running without --local to search ADS, or seed more papers[/dim]")
+                console.print("[dim]Or run 'search-ads db embed' to embed existing papers for vector search[/dim]")
                 return
         else:
             # Search ADS (papers also get saved to local DB)
@@ -459,6 +512,99 @@ def fill(
 
 
 @app.command()
+def show(
+    identifier: str = typer.Argument(..., help="Paper bibcode or ADS URL"),
+    fetch: bool = typer.Option(False, "--fetch", "-f", help="Fetch from ADS if not in local database"),
+):
+    """Show detailed information about a paper."""
+    ensure_data_dirs()
+
+    from src.core.ads_client import ADSClient
+
+    # Parse bibcode from URL if needed
+    bibcode = ADSClient.parse_bibcode_from_url(identifier) or identifier
+
+    paper_repo = PaperRepository(auto_embed=False)
+    paper = paper_repo.get(bibcode)
+
+    if not paper and fetch:
+        console.print(f"[blue]Fetching from ADS: {bibcode}[/blue]")
+        ads_client = ADSClient()
+        try:
+            paper = ads_client.fetch_paper(bibcode)
+        except RateLimitExceeded as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+    if not paper:
+        console.print(f"[red]Paper not found: {bibcode}[/red]")
+        if not fetch:
+            console.print("[dim]Use --fetch to retrieve from ADS[/dim]")
+        raise typer.Exit(1)
+
+    # Display detailed information
+    table = Table(title=f"Paper Details", show_header=False, box=None)
+    table.add_column("Field", style="cyan", width=15)
+    table.add_column("Value", style="white")
+
+    table.add_row("Bibcode", paper.bibcode)
+    table.add_row("Title", paper.title)
+
+    # Format authors
+    if paper.authors:
+        try:
+            author_list = json.loads(paper.authors)
+            if len(author_list) > 5:
+                authors_str = ", ".join(author_list[:5]) + f" (+{len(author_list) - 5} more)"
+            else:
+                authors_str = ", ".join(author_list)
+            table.add_row("Authors", authors_str)
+        except json.JSONDecodeError:
+            table.add_row("Authors", paper.authors)
+
+    table.add_row("Year", str(paper.year) if paper.year else "-")
+    table.add_row("Journal", paper.journal or "-")
+
+    if paper.volume:
+        table.add_row("Volume", paper.volume)
+    if paper.pages:
+        table.add_row("Pages", paper.pages)
+
+    table.add_row("Citations", str(paper.citation_count) if paper.citation_count else "0")
+
+    if paper.doi:
+        table.add_row("DOI", paper.doi)
+    if paper.arxiv_id:
+        table.add_row("arXiv", paper.arxiv_id)
+
+    # URLs
+    ads_url = f"https://ui.adsabs.harvard.edu/abs/{paper.bibcode}/abstract"
+    table.add_row("ADS URL", ads_url)
+
+    if paper.pdf_url:
+        table.add_row("PDF URL", paper.pdf_url)
+
+    # Citation key
+    cite_key = paper.generate_citation_key(
+        format=settings.citation_key_format,
+        lowercase=settings.citation_key_lowercase,
+    )
+    table.add_row("Citation Key", cite_key)
+
+    console.print(table)
+
+    # Abstract in a separate panel
+    if paper.abstract:
+        console.print()
+        console.print(Panel(paper.abstract, title="Abstract", border_style="blue"))
+
+    # Show BibTeX if available
+    if paper.bibtex:
+        console.print()
+        console.print(Panel(paper.bibtex, title="BibTeX", border_style="green"))
+
+
+@app.command()
 def status():
     """Show database and API usage status."""
     ensure_data_dirs()
@@ -608,7 +754,7 @@ def db_clear(
     """Clear all papers from the database."""
     ensure_data_dirs()
 
-    paper_repo = PaperRepository()
+    paper_repo = PaperRepository(auto_embed=False)
     count = paper_repo.count()
 
     if count == 0:
@@ -625,17 +771,325 @@ def db_clear(
     console.print(f"[green]Deleted {deleted} papers from the database[/green]")
 
 
+@db_app.command("embed")
+def db_embed(
+    force: bool = typer.Option(False, "--force", "-f", help="Re-embed all papers (even if already embedded)"),
+):
+    """Embed all papers in the vector store for semantic search.
+
+    This creates vector embeddings of paper abstracts using OpenAI's
+    text-embedding-3-small model, enabling semantic similarity search.
+    """
+    ensure_data_dirs()
+
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+    vector_store = get_vector_store()
+
+    # Get all papers
+    papers = paper_repo.get_all(limit=10000)
+
+    if not papers:
+        console.print("[yellow]No papers in database to embed[/yellow]")
+        return
+
+    console.print(f"[blue]Found {len(papers)} papers in database[/blue]")
+
+    # Check current embedding count
+    current_count = vector_store.count()
+    console.print(f"[dim]Currently {current_count} papers embedded[/dim]")
+
+    if force and current_count > 0:
+        console.print("[yellow]Clearing existing embeddings...[/yellow]")
+        vector_store.clear()
+
+    # Filter papers with abstracts
+    papers_with_abstracts = [p for p in papers if p.abstract]
+    console.print(f"[dim]{len(papers_with_abstracts)} papers have abstracts[/dim]")
+
+    if not papers_with_abstracts:
+        console.print("[yellow]No papers with abstracts to embed[/yellow]")
+        return
+
+    console.print("[blue]Embedding papers...[/blue]")
+
+    try:
+        embedded = vector_store.embed_papers(papers_with_abstracts)
+        console.print(f"[green]Successfully embedded {embedded} papers[/green]")
+
+        final_count = vector_store.count()
+        console.print(f"[dim]Total papers in vector store: {final_count}[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error during embedding: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@db_app.command("status")
+def db_status():
+    """Show detailed database and vector store status."""
+    ensure_data_dirs()
+
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+
+    table = Table(title="Database Status")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+
+    # Paper stats
+    total_papers = paper_repo.count()
+    papers = paper_repo.get_all(limit=10000)
+    papers_with_abstracts = len([p for p in papers if p.abstract])
+
+    table.add_row("Total papers", str(total_papers))
+    table.add_row("Papers with abstracts", str(papers_with_abstracts))
+
+    # Vector store stats
+    try:
+        vector_store = get_vector_store()
+        embedded_count = vector_store.count()
+        table.add_row("Embedded in vector store", str(embedded_count))
+
+        if papers_with_abstracts > 0:
+            coverage = (embedded_count / papers_with_abstracts) * 100
+            table.add_row("Embedding coverage", f"{coverage:.1f}%")
+    except Exception as e:
+        table.add_row("Vector store", f"[red]Error: {e}[/red]")
+
+    # Paths
+    table.add_row("Database path", str(settings.db_path))
+    table.add_row("Vector store path", str(settings.chroma_path))
+
+    console.print(table)
+
+
 # PDF commands
 @pdf_app.command("download")
-def pdf_download(bibcode: str = typer.Argument(..., help="Paper bibcode")):
-    """Download PDF for a paper."""
-    console.print("[yellow]PDF download not yet implemented (Phase 3)[/yellow]")
+def pdf_download(
+    bibcode: str = typer.Argument(..., help="Paper bibcode"),
+    force: bool = typer.Option(False, "--force", "-f", help="Re-download even if exists"),
+):
+    """Download PDF for a paper from arXiv or ADS."""
+    ensure_data_dirs()
+
+    from src.core.pdf_handler import PDFHandler, PDFDownloadError
+
+    paper_repo = PaperRepository(auto_embed=False)
+    pdf_handler = PDFHandler()
+
+    # Get paper from database
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        console.print(f"[red]Paper not found in database: {bibcode}[/red]")
+        console.print("[dim]Use 'search-ads seed' to add the paper first[/dim]")
+        raise typer.Exit(1)
+
+    if pdf_handler.is_downloaded(bibcode) and not force:
+        pdf_path = pdf_handler.get_pdf_path(bibcode)
+        console.print(f"[yellow]PDF already downloaded: {pdf_path}[/yellow]")
+        console.print("[dim]Use --force to re-download[/dim]")
+        return
+
+    console.print(f"[blue]Downloading PDF for: {paper.title[:60]}...[/blue]")
+
+    if paper.pdf_url:
+        console.print(f"[dim]URL: {paper.pdf_url}[/dim]")
+
+    try:
+        pdf_path = pdf_handler.download(paper, force=force)
+        console.print(f"[green]Downloaded: {pdf_path}[/green]")
+
+        # Update paper record with local path
+        paper.pdf_path = str(pdf_path)
+        paper_repo.add(paper, embed=False)
+
+    except PDFDownloadError as e:
+        console.print(f"[red]Download failed: {e}[/red]")
+        raise typer.Exit(1)
 
 
 @pdf_app.command("embed")
-def pdf_embed(bibcode: str = typer.Argument(..., help="Paper bibcode")):
-    """Embed PDF content for full-text search."""
-    console.print("[yellow]PDF embedding not yet implemented (Phase 3)[/yellow]")
+def pdf_embed(
+    bibcode: str = typer.Argument(..., help="Paper bibcode"),
+    force: bool = typer.Option(False, "--force", "-f", help="Re-embed even if already embedded"),
+):
+    """Embed PDF content for full-text search.
+
+    Downloads the PDF if not already downloaded, then extracts text
+    and creates vector embeddings for semantic search.
+    """
+    ensure_data_dirs()
+
+    from src.core.pdf_handler import PDFHandler, PDFDownloadError, PDFParseError
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+    pdf_handler = PDFHandler()
+    vector_store = get_vector_store()
+
+    # Get paper from database
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        console.print(f"[red]Paper not found in database: {bibcode}[/red]")
+        raise typer.Exit(1)
+
+    # Check if already embedded
+    if vector_store.is_pdf_embedded(bibcode) and not force:
+        console.print(f"[yellow]PDF already embedded for: {bibcode}[/yellow]")
+        console.print("[dim]Use --force to re-embed[/dim]")
+        return
+
+    console.print(f"[blue]Processing: {paper.title[:60]}...[/blue]")
+
+    # Download if needed
+    if not pdf_handler.is_downloaded(bibcode):
+        console.print("[blue]Downloading PDF...[/blue]")
+        try:
+            pdf_path = pdf_handler.download(paper)
+            paper.pdf_path = str(pdf_path)
+            paper_repo.add(paper, embed=False)
+        except PDFDownloadError as e:
+            console.print(f"[red]Download failed: {e}[/red]")
+            raise typer.Exit(1)
+    else:
+        pdf_path = pdf_handler.get_pdf_path(bibcode)
+
+    # Parse PDF
+    console.print("[blue]Extracting text...[/blue]")
+    try:
+        pdf_text = pdf_handler.parse(pdf_path)
+        console.print(f"[dim]Extracted {len(pdf_text):,} characters[/dim]")
+    except PDFParseError as e:
+        console.print(f"[red]Parse failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Embed in vector store
+    console.print("[blue]Creating embeddings...[/blue]")
+    try:
+        num_chunks = vector_store.embed_pdf(bibcode, pdf_text, title=paper.title)
+        console.print(f"[green]Embedded {num_chunks} chunks for {bibcode}[/green]")
+
+        # Update paper record
+        paper.pdf_embedded = True
+        paper_repo.add(paper, embed=False)
+
+    except Exception as e:
+        console.print(f"[red]Embedding failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@pdf_app.command("status")
+def pdf_status():
+    """Show PDF download and embedding status."""
+    ensure_data_dirs()
+
+    from src.core.pdf_handler import PDFHandler
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+    pdf_handler = PDFHandler()
+    vector_store = get_vector_store()
+
+    # Get stats
+    storage_stats = pdf_handler.get_storage_stats()
+    pdf_papers = vector_store.pdf_paper_count()
+    pdf_chunks = vector_store.pdf_count()
+
+    table = Table(title="PDF Status")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("PDFs downloaded", str(storage_stats["count"]))
+    table.add_row("Storage used", f"{storage_stats['total_size_mb']} MB")
+    table.add_row("Papers with embedded PDFs", str(pdf_papers))
+    table.add_row("Total PDF chunks", str(pdf_chunks))
+    table.add_row("PDF directory", str(settings.pdfs_path))
+
+    console.print(table)
+
+
+@pdf_app.command("search")
+def pdf_search(
+    query: str = typer.Argument(..., help="Search query"),
+    bibcode: Optional[str] = typer.Option(None, "--bibcode", "-b", help="Limit to specific paper"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results"),
+):
+    """Search through embedded PDF content."""
+    ensure_data_dirs()
+
+    from src.db.vector_store import get_vector_store
+
+    vector_store = get_vector_store()
+    paper_repo = PaperRepository(auto_embed=False)
+
+    if vector_store.pdf_count() == 0:
+        console.print("[yellow]No PDFs embedded yet[/yellow]")
+        console.print("[dim]Use 'search-ads pdf embed <bibcode>' to embed PDFs[/dim]")
+        return
+
+    console.print(f"[blue]Searching PDF content for: {query}[/blue]\n")
+
+    results = vector_store.search_pdf(query, n_results=top_k, bibcode=bibcode)
+
+    if not results:
+        console.print("[yellow]No results found[/yellow]")
+        return
+
+    for i, result in enumerate(results, 1):
+        paper = paper_repo.get(result["bibcode"])
+        title = paper.title if paper else result["bibcode"]
+
+        console.print(f"[bold cyan]{i}.[/bold cyan] [bold]{title[:70]}...[/bold]")
+        console.print(f"   [dim]Bibcode: {result['bibcode']} | Chunk {result['chunk_index'] + 1}[/dim]")
+
+        # Show snippet
+        snippet = result["document"][:300] + "..." if len(result["document"]) > 300 else result["document"]
+        console.print(f"   {snippet}\n")
+
+
+@pdf_app.command("list")
+def pdf_list():
+    """List all downloaded PDFs."""
+    ensure_data_dirs()
+
+    from src.core.pdf_handler import PDFHandler
+    from src.db.vector_store import get_vector_store
+
+    paper_repo = PaperRepository(auto_embed=False)
+    pdf_handler = PDFHandler()
+    vector_store = get_vector_store()
+
+    pdf_files = list(pdf_handler.pdf_dir.glob("*.pdf"))
+
+    if not pdf_files:
+        console.print("[yellow]No PDFs downloaded[/yellow]")
+        return
+
+    table = Table(title=f"Downloaded PDFs ({len(pdf_files)})")
+    table.add_column("Bibcode", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Size", style="green")
+    table.add_column("Embedded", style="magenta")
+
+    for pdf_path in sorted(pdf_files):
+        # Extract bibcode from filename
+        bibcode = pdf_path.stem.replace("_", ".")
+
+        paper = paper_repo.get(bibcode)
+        title = paper.title[:40] + "..." if paper and len(paper.title) > 40 else (paper.title if paper else "-")
+
+        size_mb = pdf_path.stat().st_size / (1024 * 1024)
+        size_str = f"{size_mb:.1f} MB"
+
+        is_embedded = vector_store.is_pdf_embedded(bibcode)
+        embedded_str = "[green]Yes[/green]" if is_embedded else "[dim]No[/dim]"
+
+        table.add_row(bibcode, title, size_str, embedded_str)
+
+    console.print(table)
 
 
 # Project commands
