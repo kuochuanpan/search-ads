@@ -1,0 +1,41 @@
+# Environment
+.env
+.envrc
+.direnv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+.eggs/
+*.egg-info/
+*.egg
+
+# Data (local database, PDFs)
+data/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+dist/
+build/
