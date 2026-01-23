@@ -1,0 +1,14 @@
+ads==0.12.7
+anthropic==0.76.0
+chromadb==1.4.1
+openai==2.15.0
+pydantic==2.12.5
+pydantic-settings==2.12.0
+pydantic_core==2.41.5
+python-dotenv==1.2.1
+requests==2.32.5
+requests-oauthlib==2.0.0
+rich==14.2.0
+sqlmodel==0.0.31
+typer==0.21.1
+typer-slim==0.21.1
