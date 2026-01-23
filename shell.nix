@@ -18,6 +18,13 @@ pkgs.mkShell {
     [ ! -d ".venv" ] && virtualenv .venv
     source .venv/bin/activate
 
-    echo "🎀 Python 3 Virtual Enviroment 🎀"
+    # Install package in development mode if not already installed
+    if ! command -v search-ads &> /dev/null; then
+      echo "Installing search-ads..."
+      pip install -e . -q
+    fi
+
+    echo "🔭 Search-ADS Development Environment"
+    echo "Run 'search-ads --help' to get started"
   '';
 }
