@@ -37,9 +37,12 @@ dependencies = [
     "ads>=0.12.6",
     "requests>=2.31.0",
 
+    # LLM APIs (for context analysis and ranking)
+    "openai>=1.0.0",
+    "anthropic>=0.40.0",
+
     # Vector store (Phase 2)
     # "chromadb>=0.4.0",
-    # "openai>=1.0.0",
 
     # Utilities
     "python-dotenv>=1.0.0",

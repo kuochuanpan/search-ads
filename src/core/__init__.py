@@ -8,6 +8,14 @@ from src.core.latex_parser import (
     add_bibtex_entry,
     format_bibitem_from_paper,
 )
+from src.core.llm_client import (
+    CitationType,
+    ContextAnalysis,
+    LLMClient,
+    LLMNotAvailable,
+    RankedPaper,
+)
+from src.core.citation_engine import CitationEngine, CitationResult, FillResult
 
 __all__ = [
     "ADSClient",
@@ -20,4 +28,12 @@ __all__ = [
     "LaTeXParser",
     "add_bibtex_entry",
     "format_bibitem_from_paper",
+    "CitationType",
+    "ContextAnalysis",
+    "LLMClient",
+    "LLMNotAvailable",
+    "RankedPaper",
+    "CitationEngine",
+    "CitationResult",
+    "FillResult",
 ]

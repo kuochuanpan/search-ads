@@ -16,6 +16,7 @@ from src.core.latex_parser import (
     add_bibtex_entry,
     format_bibitem_from_paper,
 )
+from src.core.llm_client import LLMClient, LLMNotAvailable, RankedPaper, CitationType
 from src.db.models import Paper
 from src.db.repository import (
     PaperRepository,
@@ -179,32 +180,173 @@ def expand(
         raise typer.Exit(1)
 
 
+def _display_ranked_paper(ranked: RankedPaper, index: int):
+    """Display a ranked paper with relevance information."""
+    paper = ranked.paper
+
+    # Parse authors
+    authors = "Unknown"
+    if paper.authors:
+        try:
+            author_list = json.loads(paper.authors)
+            if len(author_list) > 3:
+                authors = f"{author_list[0]} et al."
+            else:
+                authors = ", ".join(author_list[:3])
+        except json.JSONDecodeError:
+            pass
+
+    title = f"[bold]{paper.title}[/bold]"
+    subtitle = f"{authors} ({paper.year})"
+
+    # Relevance info
+    score_color = "green" if ranked.relevance_score >= 0.7 else "yellow" if ranked.relevance_score >= 0.4 else "red"
+    relevance = f"[{score_color}]Relevance: {ranked.relevance_score:.0%}[/{score_color}]"
+    citation_type = f"[magenta]Type: {ranked.citation_type.value}[/magenta]"
+
+    content = f"{subtitle}\n{relevance} | {citation_type}\nCitations: {paper.citation_count or 0} | Bibcode: {paper.bibcode}"
+
+    if ranked.relevance_explanation:
+        content += f"\n\n[cyan]Why cite:[/cyan] {ranked.relevance_explanation}"
+
+    if paper.abstract:
+        abstract = paper.abstract[:400] + "..." if len(paper.abstract) > 400 else paper.abstract
+        content += f"\n\n[dim]{abstract}[/dim]"
+
+    console.print(f"[bold cyan]{index}.[/bold cyan]")
+    console.print(Panel(content, title=title, border_style="blue"))
+    console.print()
+
+
+def _search_local_database(keywords: list[str], limit: int = 50) -> list[Paper]:
+    """Search the local database using keywords."""
+    paper_repo = PaperRepository()
+    results = []
+    seen_bibcodes = set()
+
+    # Search by each keyword in title and abstract
+    for keyword in keywords:
+        if len(keyword) < 3:  # Skip very short keywords
+            continue
+        # Search title and abstract
+        matches = paper_repo.search_by_text(keyword, limit=limit)
+        for paper in matches:
+            if paper.bibcode not in seen_bibcodes:
+                results.append(paper)
+                seen_bibcodes.add(paper.bibcode)
+
+    # Sort by citation count
+    results.sort(key=lambda p: p.citation_count or 0, reverse=True)
+    return results[:limit]
+
+
 @app.command()
 def find(
     context: str = typer.Option(..., "--context", "-c", help="Text context for the citation"),
     max_hops: int = typer.Option(2, "--max-hops", help="Maximum hops for graph expansion"),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results to return"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Disable LLM-based analysis and ranking"),
+    local_only: bool = typer.Option(False, "--local", "-l", help="Search local database only (no ADS API calls)"),
+    num_refs: int = typer.Option(1, "--num-refs", "-n", help="Number of references needed (for \\cite{,} patterns)"),
 ):
-    """Search for papers matching a context."""
+    """Search for papers matching a context using LLM-powered analysis.
+
+    Use --local to search only the local database (faster, no API calls).
+    Use --num-refs to specify how many references are needed (e.g., 2 for \\cite{,}).
+    """
     ensure_data_dirs()
 
     ads_client = ADSClient()
+    paper_repo = PaperRepository()
 
     console.print(f"[blue]Searching for papers matching context...[/blue]")
-    console.print(f"[dim]Context: {context[:100]}...[/dim]\n")
+    console.print(f"[dim]Context: {context[:100]}{'...' if len(context) > 100 else ''}[/dim]")
+    if num_refs > 1:
+        console.print(f"[cyan]Looking for {num_refs} references[/cyan]")
+    console.print()
 
     try:
-        # For Phase 1, do a simple keyword search
-        # Phase 2 will add LLM-based keyword extraction and ranking
-        papers = ads_client.search(context, limit=top_k)
+        papers = []
+        analysis = None
 
-        if not papers:
-            console.print("[yellow]No papers found[/yellow]")
-            return
+        # Try LLM-powered analysis if available and not disabled
+        if not no_llm:
+            try:
+                llm_client = LLMClient()
 
+                # Step 1: Analyze context
+                console.print("[blue]Analyzing context with LLM...[/blue]")
+                analysis = llm_client.analyze_context(context)
+
+                console.print(f"[green]Topic:[/green] {analysis.topic}")
+                console.print(f"[green]Citation type needed:[/green] {analysis.citation_type.value}")
+                console.print(f"[green]Search query:[/green] {analysis.search_query}")
+                console.print(f"[dim]Reasoning: {analysis.reasoning}[/dim]\n")
+
+            except LLMNotAvailable as e:
+                console.print(f"[yellow]LLM not available: {e}[/yellow]")
+                console.print("[yellow]Using basic keyword extraction...[/yellow]\n")
+
+        # Step 2: Search for papers
+        search_keywords = analysis.keywords if analysis else context.split()[:5]
+        search_query = analysis.search_query if analysis else context
+
+        if local_only:
+            # Search local database only
+            console.print("[blue]Searching local database...[/blue]")
+            db_count = paper_repo.count()
+            console.print(f"[dim]Database has {db_count} papers[/dim]")
+
+            papers = _search_local_database(search_keywords, limit=top_k * 3)
+
+            if not papers:
+                console.print("[yellow]No papers found in local database[/yellow]")
+                console.print("[dim]Try running without --local to search ADS, or seed more papers[/dim]")
+                return
+        else:
+            # Search ADS (papers also get saved to local DB)
+            console.print("[blue]Searching ADS...[/blue]")
+            papers = ads_client.search(search_query, limit=top_k * 3)
+
+            if not papers and analysis:
+                # Fallback to keyword-based search
+                console.print("[yellow]No results with extracted query, trying keywords...[/yellow]")
+                keyword_query = " OR ".join(search_keywords[:3])
+                papers = ads_client.search(keyword_query, limit=top_k * 3)
+
+            if not papers:
+                console.print("[yellow]No papers found[/yellow]")
+                return
+
+        # Step 3: Rank papers with LLM (if available)
+        if not no_llm and analysis:
+            try:
+                llm_client = LLMClient()
+                console.print(f"[blue]Ranking {len(papers)} papers by relevance...[/blue]\n")
+                ranked_papers = llm_client.rank_papers(
+                    papers, context, context_analysis=analysis, top_k=max(top_k, num_refs * 2)
+                )
+
+                # Show results
+                display_count = max(top_k, num_refs)
+                console.print(f"[green]Top {min(len(ranked_papers), display_count)} relevant papers:[/green]")
+                if num_refs > 1:
+                    console.print(f"[cyan](Select {num_refs} for your \\cite{{{',' * (num_refs - 1)}}} )[/cyan]\n")
+                else:
+                    console.print()
+
+                for i, ranked in enumerate(ranked_papers[:display_count], 1):
+                    _display_ranked_paper(ranked, i)
+
+                return
+
+            except Exception as e:
+                console.print(f"[yellow]LLM ranking failed: {e}[/yellow]")
+
+        # Fallback: display without ranking
         console.print(f"[green]Found {len(papers)} papers:[/green]\n")
 
-        for i, paper in enumerate(papers, 1):
+        for i, paper in enumerate(papers[:top_k], 1):
             console.print(f"[bold cyan]{i}.[/bold cyan]")
             _display_paper(paper, show_abstract=True)
             console.print()
@@ -216,37 +358,35 @@ def find(
 
 @app.command()
 def fill(
-    bibcode: str = typer.Option(..., "--bibcode", "-b", help="Paper bibcode to cite"),
+    bibcode: Optional[str] = typer.Option(None, "--bibcode", "-b", help="Paper bibcode to cite (single)"),
+    bibcodes: Optional[str] = typer.Option(None, "--bibcodes", help="Comma-separated bibcodes for multiple refs (e.g., 'bib1,bib2')"),
     tex_file: Path = typer.Option(..., "--tex-file", "-t", help="LaTeX file to modify"),
     bib_file: Optional[Path] = typer.Option(None, "--bib-file", help="BibTeX file (auto-detected if not specified)"),
     line: int = typer.Option(..., "--line", "-l", help="Line number of the citation"),
     column: int = typer.Option(..., "--column", "-c", help="Column position of the citation"),
 ):
-    """Fill an empty citation with a paper."""
+    """Fill an empty citation with one or more papers.
+
+    For single reference: --bibcode "2023ApJ...XXX"
+    For multiple refs:    --bibcodes "2023ApJ...XXX,2022MNRAS...YYY"
+    """
     ensure_data_dirs()
 
     if not tex_file.exists():
         console.print(f"[red]File not found: {tex_file}[/red]")
         raise typer.Exit(1)
 
+    # Parse bibcodes
+    if bibcodes:
+        bibcode_list = [b.strip() for b in bibcodes.split(",") if b.strip()]
+    elif bibcode:
+        bibcode_list = [bibcode]
+    else:
+        console.print("[red]Please provide --bibcode or --bibcodes[/red]")
+        raise typer.Exit(1)
+
     ads_client = ADSClient()
     paper_repo = PaperRepository()
-
-    # Get or fetch the paper
-    paper = paper_repo.get(bibcode)
-    if not paper:
-        console.print(f"[blue]Fetching paper from ADS...[/blue]")
-        paper = ads_client.fetch_paper(bibcode)
-        if not paper:
-            console.print(f"[red]Paper not found: {bibcode}[/red]")
-            raise typer.Exit(1)
-
-    # Generate citation key
-    cite_key = paper.generate_citation_key(
-        format=settings.citation_key_format,
-        lowercase=settings.citation_key_lowercase,
-        max_length=settings.citation_key_max_length,
-    )
 
     # Parse LaTeX file
     parser = LaTeXParser(tex_file)
@@ -256,38 +396,66 @@ def fill(
     if bib_file is None and bib_info.uses_bib_file:
         bib_file = tex_file.parent / bib_info.bib_file
 
-    console.print(f"[blue]Filling citation with: {cite_key}[/blue]")
+    # Process each bibcode
+    cite_keys = []
+    papers_to_add = []
 
-    # Fill the citation in the tex file
+    for bcode in bibcode_list:
+        # Get or fetch the paper
+        paper = paper_repo.get(bcode)
+        if not paper:
+            console.print(f"[blue]Fetching paper from ADS: {bcode}...[/blue]")
+            paper = ads_client.fetch_paper(bcode)
+            if not paper:
+                console.print(f"[red]Paper not found: {bcode}[/red]")
+                raise typer.Exit(1)
+
+        # Generate citation key
+        cite_key = paper.generate_citation_key(
+            format=settings.citation_key_format,
+            lowercase=settings.citation_key_lowercase,
+            max_length=settings.citation_key_max_length,
+        )
+
+        cite_keys.append(cite_key)
+        papers_to_add.append((paper, cite_key))
+        console.print(f"[green]Prepared: {cite_key}[/green] ({paper.title[:50]}...)")
+
+    # Fill all citation keys at once
+    console.print(f"\n[blue]Filling citation with: {', '.join(cite_keys)}[/blue]")
+
     try:
-        parser.fill_citation(line, column, cite_key)
+        # Fill each key one by one (the parser handles appending to existing keys)
+        for cite_key in cite_keys:
+            parser.fill_citation(line, column, cite_key)
         console.print(f"[green]Updated {tex_file}[/green]")
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
     # Add to bibliography
-    if bib_file:
-        # Get or generate BibTeX
-        bibtex = paper.bibtex
-        if not bibtex:
-            bibtex = ads_client.generate_bibtex(bibcode)
+    for paper, cite_key in papers_to_add:
+        if bib_file:
+            # Get or generate BibTeX
+            bibtex = paper.bibtex
+            if not bibtex:
+                bibtex = ads_client.generate_bibtex(paper.bibcode)
+                if bibtex:
+                    paper.bibtex = bibtex
+                    paper_repo.add(paper)
+
             if bibtex:
-                paper.bibtex = bibtex
-                paper_repo.add(paper)
-
-        if bibtex:
-            add_bibtex_entry(bib_file, bibtex)
-            console.print(f"[green]Added BibTeX entry to {bib_file}[/green]")
+                add_bibtex_entry(bib_file, bibtex)
+                console.print(f"[green]Added BibTeX: {cite_key}[/green]")
+            else:
+                console.print(f"[yellow]Warning: Could not generate BibTeX for {cite_key}[/yellow]")
         else:
-            console.print("[yellow]Warning: Could not generate BibTeX[/yellow]")
-    else:
-        # Add bibitem to tex file
-        bibitem_text = format_bibitem_from_paper(paper)
-        parser.add_bibitem(cite_key, bibitem_text)
-        console.print(f"[green]Added \\bibitem to {tex_file}[/green]")
+            # Add bibitem to tex file
+            bibitem_text = format_bibitem_from_paper(paper)
+            parser.add_bibitem(cite_key, bibitem_text)
+            console.print(f"[green]Added \\bibitem: {cite_key}[/green]")
 
-    console.print("\n[green]Done![/green]")
+    console.print(f"\n[green]Done! Added {len(cite_keys)} reference(s)[/green]")
 
 
 @app.command()
@@ -302,6 +470,8 @@ def status():
     paper_count = paper_repo.count()
     projects = project_repo.get_all()
     ads_usage = usage_repo.get_ads_usage_today()
+    openai_usage = usage_repo.get_openai_usage_today()
+    anthropic_usage = usage_repo.get_anthropic_usage_today()
 
     table = Table(title="Search-ADS Status")
     table.add_column("Metric", style="cyan")
@@ -310,7 +480,17 @@ def status():
     table.add_row("Papers in database", str(paper_count))
     table.add_row("Projects", str(len(projects)))
     table.add_row("ADS API calls today", f"{ads_usage} / 5000")
+    table.add_row("OpenAI API calls today", str(openai_usage))
+    table.add_row("Anthropic API calls today", str(anthropic_usage))
     table.add_row("Database location", str(settings.db_path))
+
+    # Show LLM availability
+    llm_status = []
+    if settings.anthropic_api_key:
+        llm_status.append("Claude")
+    if settings.openai_api_key:
+        llm_status.append("OpenAI")
+    table.add_row("LLM backends available", ", ".join(llm_status) if llm_status else "[red]None[/red]")
 
     console.print(table)
 

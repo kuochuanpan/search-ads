@@ -132,6 +132,32 @@ class PaperRepository:
             stmt = select(Paper).where(Paper.title.ilike(f"%{query}%")).limit(limit)
             return list(session.exec(stmt).all())
 
+    def search_by_text(self, query: str, limit: int = 20) -> list[Paper]:
+        """Search papers by title and abstract (simple LIKE query).
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results
+
+        Returns:
+            List of matching papers, sorted by citation count
+        """
+        from sqlalchemy import or_
+
+        with self.db.get_session() as session:
+            stmt = (
+                select(Paper)
+                .where(
+                    or_(
+                        Paper.title.ilike(f"%{query}%"),
+                        Paper.abstract.ilike(f"%{query}%"),
+                    )
+                )
+                .order_by(Paper.citation_count.desc())
+                .limit(limit)
+            )
+            return list(session.exec(stmt).all())
+
     def delete_all(self) -> int:
         """Delete all papers from the database. Returns count of deleted papers."""
         with self.db.get_session() as session:
@@ -384,3 +410,35 @@ class ApiUsageRepository:
         """Check if we can make an ADS call. Returns (can_call, is_warning)."""
         current = self.get_ads_usage_today()
         return (current < limit, current >= warn_threshold)
+
+    def increment_openai(self) -> int:
+        """Increment OpenAI API call count and return new count."""
+        with self.db.get_session() as session:
+            usage = self._get_or_create_today(session)
+            usage.openai_calls += 1
+            session.add(usage)
+            session.commit()
+            return usage.openai_calls
+
+    def increment_anthropic(self) -> int:
+        """Increment Anthropic API call count and return new count."""
+        with self.db.get_session() as session:
+            usage = self._get_or_create_today(session)
+            usage.anthropic_calls += 1
+            session.add(usage)
+            session.commit()
+            return usage.anthropic_calls
+
+    def get_openai_usage_today(self) -> int:
+        """Get today's OpenAI API call count."""
+        with self.db.get_session() as session:
+            today = self._get_today()
+            usage = session.get(ApiUsage, today)
+            return usage.openai_calls if usage else 0
+
+    def get_anthropic_usage_today(self) -> int:
+        """Get today's Anthropic API call count."""
+        with self.db.get_session() as session:
+            today = self._get_today()
+            usage = session.get(ApiUsage, today)
+            return usage.anthropic_calls if usage else 0
