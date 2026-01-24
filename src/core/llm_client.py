@@ -283,6 +283,10 @@ Return the JSON analysis."""
         if context_analysis is None:
             context_analysis = self.analyze_context(context)
 
+        # Get notes for papers (for boosting)
+        from src.db.repository import NoteRepository
+        note_repo = NoteRepository(auto_embed=False)
+
         # Prepare paper summaries for the LLM
         paper_summaries = []
         for i, paper in enumerate(papers):
@@ -294,26 +298,41 @@ Return the JSON analysis."""
                 "citations": paper.citation_count or 0,
                 "abstract": (paper.abstract[:500] + "...") if paper.abstract and len(paper.abstract) > 500 else paper.abstract,
             }
+
+            # Add "my paper" flag for boosting
+            if paper.is_my_paper:
+                summary["is_my_paper"] = True
+
+            # Add user note if exists (for context and boosting)
+            note = note_repo.get(paper.bibcode)
+            if note:
+                summary["user_note"] = note.content[:200] + "..." if len(note.content) > 200 else note.content
+
             paper_summaries.append(summary)
 
         system_prompt = """You are an expert scientific paper recommender for astrophysics research.
 Your task is to rank papers by their relevance for citing in a specific context.
 
 RANKING CRITERIA (in order of importance):
-1. **Match citation type needed**:
+1. **User's own papers (is_my_paper=true)**: Give STRONG preference to the user's own papers when relevant. Self-citation is appropriate and expected in academic writing when the user's previous work is genuinely relevant.
+2. **Papers with user notes**: If a paper has a "user_note" field, this indicates the user has specifically annotated this paper as relevant. Consider the note content and give extra weight to papers with notes.
+3. **Match citation type needed**:
    - For "review" or "foundational" needs: STRONGLY prefer review papers, Annual Reviews, Living Reviews, or highly-cited (>500) classic papers
    - For "supporting" needs: prefer papers with specific observational/theoretical results
    - For "methodological" needs: prefer papers describing techniques
-2. **Relevance to the specific claim**: How directly does the paper address what's being stated?
-3. **Paper authority**: High citation count indicates community acceptance (especially important for foundational/review citations)
-4. **Appropriateness**: A review paper is better than a narrow technical paper for broad overview statements
+4. **Relevance to the specific claim**: How directly does the paper address what's being stated?
+5. **Paper authority**: High citation count indicates community acceptance (especially important for foundational/review citations)
+6. **Appropriateness**: A review paper is better than a narrow technical paper for broad overview statements
 
-IMPORTANT: For introductory/overview statements, a well-cited review paper (even if slightly older) is MUCH better than a recent narrow paper.
+IMPORTANT:
+- For introductory/overview statements, a well-cited review paper (even if slightly older) is MUCH better than a recent narrow paper.
+- Papers marked as "is_my_paper" should get a significant boost (add ~0.2 to relevance score) when they are relevant to the context.
+- Papers with "user_note" should be carefully considered - the user annotated them for a reason.
 
 Return a JSON array of rankings with:
 - "id": The paper ID from the input
-- "relevance_score": Float from 0.0 to 1.0 (give review papers HIGH scores for overview statements)
-- "explanation": Brief explanation of why this paper is relevant (1-2 sentences)
+- "relevance_score": Float from 0.0 to 1.0 (give review papers HIGH scores for overview statements, boost user's own papers)
+- "explanation": Brief explanation of why this paper is relevant (1-2 sentences). Mention if it's the user's own paper.
 - "citation_type": The type of citation this paper would serve (foundational, review, supporting, methodological, contrasting)
 
 Return ONLY the JSON array, sorted by relevance_score descending. Include all papers."""
@@ -370,19 +389,44 @@ Rank these papers by relevance for this citation."""
     def _fallback_ranking(
         self, papers: list[Paper], context_analysis: ContextAnalysis, top_k: int
     ) -> list[RankedPaper]:
-        """Fallback ranking based on citation count."""
-        sorted_papers = sorted(
-            papers, key=lambda p: p.citation_count or 0, reverse=True
-        )
+        """Fallback ranking based on citation count, with boosts for my papers and notes."""
+        from src.db.repository import NoteRepository
+        note_repo = NoteRepository(auto_embed=False)
+
+        # Calculate scores with boosts
+        scored_papers = []
+        for paper in papers:
+            # Base score from citations (normalized to 0-0.5 range)
+            base_score = min((paper.citation_count or 0) / 1000, 0.5)
+
+            # Boost for "my paper"
+            my_paper_boost = 0.3 if paper.is_my_paper else 0.0
+
+            # Boost for having a note
+            note = note_repo.get(paper.bibcode)
+            note_boost = 0.2 if note else 0.0
+
+            total_score = min(base_score + my_paper_boost + note_boost, 1.0)
+
+            explanation = "Ranked by citation count"
+            if paper.is_my_paper:
+                explanation = "Your paper (boosted)"
+            elif note:
+                explanation = "Has user note (boosted)"
+
+            scored_papers.append((paper, total_score, explanation))
+
+        # Sort by score
+        scored_papers.sort(key=lambda x: x[1], reverse=True)
 
         return [
             RankedPaper(
                 paper=paper,
-                relevance_score=0.5,
-                relevance_explanation="Ranked by citation count (LLM ranking unavailable)",
+                relevance_score=score,
+                relevance_explanation=explanation,
                 citation_type=context_analysis.citation_type,
             )
-            for paper in sorted_papers[:top_k]
+            for paper, score, explanation in scored_papers[:top_k]
         ]
 
     def generate_citation_reason(

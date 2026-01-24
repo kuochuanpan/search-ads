@@ -8,7 +8,7 @@ from typing import Optional
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.core.config import settings, ensure_data_dirs
-from src.db.models import ApiUsage, Citation, Paper, PaperProject, Project, Search
+from src.db.models import ApiUsage, Citation, Note, Paper, PaperProject, Project, Search
 
 
 class Database:
@@ -190,6 +190,41 @@ class PaperRepository:
                     )
                 )
                 .order_by(Paper.citation_count.desc())
+                .limit(limit)
+            )
+            return list(session.exec(stmt).all())
+
+    def set_my_paper(self, bibcode: str, is_my_paper: bool) -> bool:
+        """Set whether a paper is marked as the user's paper.
+
+        Args:
+            bibcode: Paper bibcode
+            is_my_paper: Whether this is the user's paper
+
+        Returns:
+            True if updated, False if paper not found
+        """
+        with self.db.get_session() as session:
+            paper = session.get(Paper, bibcode)
+            if paper:
+                paper.is_my_paper = is_my_paper
+                paper.updated_at = datetime.utcnow()
+                session.add(paper)
+                session.commit()
+                return True
+            return False
+
+    def get_my_papers(self, limit: int = 100) -> list[Paper]:
+        """Get all papers marked as the user's papers.
+
+        Returns:
+            List of papers where is_my_paper is True
+        """
+        with self.db.get_session() as session:
+            stmt = (
+                select(Paper)
+                .where(Paper.is_my_paper == True)
+                .order_by(Paper.year.desc())
                 .limit(limit)
             )
             return list(session.exec(stmt).all())
@@ -478,3 +513,137 @@ class ApiUsageRepository:
             today = self._get_today()
             usage = session.get(ApiUsage, today)
             return usage.anthropic_calls if usage else 0
+
+
+class NoteRepository:
+    """Repository for Note CRUD operations."""
+
+    def __init__(self, db: Optional[Database] = None, auto_embed: bool = True):
+        """Initialize the note repository.
+
+        Args:
+            db: Database instance (uses global if not provided)
+            auto_embed: Whether to automatically embed notes in vector store
+        """
+        self.db = db or get_db()
+        self.auto_embed = auto_embed
+        self._vector_store = None
+
+    @property
+    def vector_store(self):
+        """Lazy load the vector store."""
+        if self._vector_store is None:
+            from src.db.vector_store import get_vector_store
+            self._vector_store = get_vector_store()
+        return self._vector_store
+
+    def add(self, bibcode: str, content: str, embed: Optional[bool] = None) -> Note:
+        """Add or append a note to a paper.
+
+        If a note already exists for this paper, appends the content.
+
+        Args:
+            bibcode: Paper bibcode
+            content: Note content to add
+            embed: Whether to embed in vector store (defaults to self.auto_embed)
+
+        Returns:
+            The added/updated note
+        """
+        should_embed = embed if embed is not None else self.auto_embed
+
+        with self.db.get_session() as session:
+            # Check if note exists for this paper
+            stmt = select(Note).where(Note.bibcode == bibcode)
+            existing = session.exec(stmt).first()
+
+            if existing:
+                # Append to existing note
+                existing.content = existing.content + "\n\n" + content
+                existing.updated_at = datetime.utcnow()
+                session.add(existing)
+                session.commit()
+                session.refresh(existing)
+                result = existing
+            else:
+                # Create new note
+                note = Note(bibcode=bibcode, content=content)
+                session.add(note)
+                session.commit()
+                session.refresh(note)
+                result = note
+
+        # Embed in vector store if requested
+        if should_embed:
+            try:
+                self.vector_store.embed_note(result)
+            except Exception as e:
+                print(f"Warning: Failed to embed note for {bibcode}: {e}")
+
+        return result
+
+    def get(self, bibcode: str) -> Optional[Note]:
+        """Get note for a paper by bibcode."""
+        with self.db.get_session() as session:
+            stmt = select(Note).where(Note.bibcode == bibcode)
+            return session.exec(stmt).first()
+
+    def get_by_id(self, note_id: int) -> Optional[Note]:
+        """Get note by ID."""
+        with self.db.get_session() as session:
+            return session.get(Note, note_id)
+
+    def get_all(self, limit: int = 100) -> list[Note]:
+        """Get all notes."""
+        with self.db.get_session() as session:
+            stmt = select(Note).limit(limit)
+            return list(session.exec(stmt).all())
+
+    def delete(self, bibcode: str) -> bool:
+        """Delete note for a paper by bibcode.
+
+        Args:
+            bibcode: Paper bibcode
+
+        Returns:
+            True if deleted, False if not found
+        """
+        with self.db.get_session() as session:
+            stmt = select(Note).where(Note.bibcode == bibcode)
+            note = session.exec(stmt).first()
+            if note:
+                # Delete from vector store first
+                try:
+                    self.vector_store.delete_note(bibcode)
+                except Exception:
+                    pass  # Continue even if vector store delete fails
+
+                session.delete(note)
+                session.commit()
+                return True
+            return False
+
+    def count(self) -> int:
+        """Count total notes in database."""
+        with self.db.get_session() as session:
+            from sqlalchemy import func
+            result = session.exec(select(func.count(Note.id)))
+            return result.one()
+
+    def search_by_text(self, query: str, limit: int = 20) -> list[Note]:
+        """Search notes by content (simple LIKE query).
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results
+
+        Returns:
+            List of matching notes
+        """
+        with self.db.get_session() as session:
+            stmt = (
+                select(Note)
+                .where(Note.content.ilike(f"%{query}%"))
+                .limit(limit)
+            )
+            return list(session.exec(stmt).all())

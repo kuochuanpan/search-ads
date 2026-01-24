@@ -115,6 +115,9 @@ class ADSClient:
             except (ValueError, TypeError):
                 pass
 
+        # Auto-detect if this is the user's paper
+        is_my_paper = settings.is_my_paper_by_author(authors)
+
         return Paper(
             bibcode=article.bibcode,
             title=article.title[0] if article.title else "Unknown",
@@ -128,6 +131,7 @@ class ADSClient:
             arxiv_id=arxiv_id,
             citation_count=article.citation_count,
             pdf_url=pdf_url,
+            is_my_paper=is_my_paper,
         )
 
     def fetch_paper(self, bibcode: str, save: bool = True) -> Optional[Paper]:

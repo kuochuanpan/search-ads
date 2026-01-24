@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path.home() / ".search-ads" / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -51,6 +51,35 @@ class Settings(BaseSettings):
     citation_key_format: Literal["author_year", "author_year_title", "bibcode"] = "bibcode"
     citation_key_lowercase: bool = True
     citation_key_max_length: int = 30
+
+    # Author name(s) for auto-detecting "my papers"
+    # Comma-separated list of name variations (e.g., "Pan, K.,Pan, Ke-Jung")
+    my_author_names: str = Field(default="", alias="MY_AUTHOR_NAMES")
+
+    def get_my_author_names(self) -> list[str]:
+        """Get list of author name variations for matching."""
+        if not self.my_author_names:
+            return []
+        return [name.strip() for name in self.my_author_names.split(",") if name.strip()]
+
+    def is_my_paper_by_author(self, authors_json: str | None) -> bool:
+        """Check if a paper is authored by me based on author list."""
+        if not authors_json or not self.my_author_names:
+            return False
+
+        import json
+        try:
+            authors = json.loads(authors_json)
+        except json.JSONDecodeError:
+            return False
+
+        my_names = self.get_my_author_names()
+        for author in authors:
+            author_lower = author.lower()
+            for my_name in my_names:
+                if my_name.lower() in author_lower:
+                    return True
+        return False
 
 
 class ProjectConfig:

@@ -27,6 +27,7 @@ class Paper(SQLModel, table=True):
     pdf_url: Optional[str] = None
     pdf_path: Optional[str] = None
     pdf_embedded: bool = Field(default=False)
+    is_my_paper: bool = Field(default=False)  # Papers authored by the user
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -164,3 +165,15 @@ class ApiUsage(SQLModel, table=True):
     ads_calls: int = Field(default=0)
     openai_calls: int = Field(default=0)
     anthropic_calls: int = Field(default=0)
+
+
+class Note(SQLModel, table=True):
+    """A user note attached to a paper."""
+
+    __tablename__ = "notes"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    bibcode: str = Field(foreign_key="papers.bibcode", index=True)
+    content: str  # The note text
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

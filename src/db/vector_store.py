@@ -16,6 +16,7 @@ class VectorStore:
 
     ABSTRACTS_COLLECTION = "abstracts"
     PDF_COLLECTION = "pdf_contents"
+    NOTES_COLLECTION = "notes"
 
     def __init__(self, persist_dir: Optional[Path] = None):
         """Initialize the vector store.
@@ -27,6 +28,7 @@ class VectorStore:
         self._client = None
         self._abstracts_collection = None
         self._pdf_collection = None
+        self._notes_collection = None
         self._embedding_function = None
 
     @property
@@ -86,6 +88,17 @@ class VectorStore:
                 metadata={"description": "PDF full-text content for semantic search"},
             )
         return self._pdf_collection
+
+    @property
+    def notes_collection(self):
+        """Get or create the notes collection."""
+        if self._notes_collection is None:
+            self._notes_collection = self.client.get_or_create_collection(
+                name=self.NOTES_COLLECTION,
+                embedding_function=self.embedding_function,
+                metadata={"description": "User notes for semantic search"},
+            )
+        return self._notes_collection
 
     def embed_paper(self, paper: Paper) -> bool:
         """Embed a paper's abstract into the vector store.
@@ -449,6 +462,113 @@ class VectorStore:
         if count > 0:
             self.client.delete_collection(self.PDF_COLLECTION)
             self._pdf_collection = None
+        return count
+
+    # Note embedding methods
+
+    def embed_note(self, note) -> bool:
+        """Embed a note into the vector store.
+
+        Args:
+            note: Note object to embed
+
+        Returns:
+            True if successful
+        """
+        # Use bibcode as ID since we have one note per paper
+        note_id = f"note_{note.bibcode}"
+
+        # Remove existing embedding for this note
+        existing = self.notes_collection.get(ids=[note_id])
+        if existing["ids"]:
+            self.notes_collection.delete(ids=[note_id])
+
+        # Prepare metadata
+        metadata = {
+            "bibcode": note.bibcode,
+            "note_id": note.id,
+        }
+
+        # Add to collection
+        self.notes_collection.add(
+            ids=[note_id],
+            documents=[note.content],
+            metadatas=[metadata],
+        )
+
+        return True
+
+    def search_notes(
+        self,
+        query: str,
+        n_results: int = 10,
+    ) -> list[dict]:
+        """Search notes by semantic similarity.
+
+        Args:
+            query: Search query text
+            n_results: Maximum number of results to return
+
+        Returns:
+            List of dicts with bibcode, distance, and content
+        """
+        results = self.notes_collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        formatted = []
+        if results["ids"] and results["ids"][0]:
+            for i, note_id in enumerate(results["ids"][0]):
+                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                formatted.append(
+                    {
+                        "note_id": note_id,
+                        "bibcode": metadata.get("bibcode", ""),
+                        "distance": results["distances"][0][i] if results["distances"] else None,
+                        "content": results["documents"][0][i] if results["documents"] else "",
+                    }
+                )
+
+        return formatted
+
+    def delete_note(self, bibcode: str) -> bool:
+        """Remove a note from the vector store.
+
+        Args:
+            bibcode: Paper bibcode
+
+        Returns:
+            True if deleted, False if not found
+        """
+        note_id = f"note_{bibcode}"
+        existing = self.notes_collection.get(ids=[note_id])
+        if existing["ids"]:
+            self.notes_collection.delete(ids=[note_id])
+            return True
+        return False
+
+    def notes_count(self) -> int:
+        """Get the number of embedded notes."""
+        return self.notes_collection.count()
+
+    def is_note_embedded(self, bibcode: str) -> bool:
+        """Check if a note is already embedded."""
+        note_id = f"note_{bibcode}"
+        existing = self.notes_collection.get(ids=[note_id])
+        return bool(existing["ids"])
+
+    def clear_notes(self) -> int:
+        """Clear all note embeddings.
+
+        Returns:
+            Number of notes deleted
+        """
+        count = self.notes_count()
+        if count > 0:
+            self.client.delete_collection(self.NOTES_COLLECTION)
+            self._notes_collection = None
         return count
 
 

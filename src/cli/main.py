@@ -23,6 +23,7 @@ from src.db.repository import (
     ProjectRepository,
     CitationRepository,
     ApiUsageRepository,
+    NoteRepository,
     get_db,
 )
 
@@ -40,6 +41,57 @@ app.add_typer(pdf_app, name="pdf")
 app.add_typer(project_app, name="project")
 
 console = Console()
+
+# Template for .env file
+ENV_TEMPLATE = """# Search-ADS Configuration
+# Get your ADS API key from: https://ui.adsabs.harvard.edu/user/settings/token
+ADS_API_KEY=
+
+# OpenAI API key for embeddings and LLM features (optional)
+# Get your key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY=
+
+# Anthropic API key for Claude LLM features (optional)
+# Get your key from: https://console.anthropic.com/
+#ANTHROPIC_API_KEY=
+
+# Author name(s) for auto-detecting "my papers" (comma-separated, optional)
+# Example: MY_AUTHOR_NAMES="Pan, K.,Pan, Kuo-Chuan"
+#MY_AUTHOR_NAMES=
+"""
+
+
+@app.command()
+def init(
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing .env file"),
+):
+    """Initialize search-ads configuration.
+
+    Creates the data directory and a template .env file for API keys.
+    The configuration is stored in ~/.search-ads/
+    """
+    config_dir = settings.data_dir
+    env_file = config_dir / ".env"
+
+    # Create directory
+    config_dir.mkdir(parents=True, exist_ok=True)
+    console.print(f"[green]Created directory:[/green] {config_dir}")
+
+    # Create .env file
+    if env_file.exists() and not force:
+        console.print(f"[yellow]Config file already exists:[/yellow] {env_file}")
+        console.print("[dim]Use --force to overwrite[/dim]")
+    else:
+        env_file.write_text(ENV_TEMPLATE)
+        console.print(f"[green]Created config file:[/green] {env_file}")
+
+    # Show next steps
+    console.print("\n[bold]Next steps:[/bold]")
+    console.print(f"  1. Edit {env_file}")
+    console.print("  2. Add your ADS API key (required)")
+    console.print("     Get it from: https://ui.adsabs.harvard.edu/user/settings/token")
+    console.print("  3. Optionally add OpenAI key for semantic search")
+    console.print("\n[dim]Then run: search-ads seed <paper-url> to add your first paper[/dim]")
 
 
 def _display_paper(paper: Paper, show_abstract: bool = True):
@@ -236,6 +288,8 @@ def _search_local_database(
 ) -> list[Paper]:
     """Search the local database using vector similarity or keywords.
 
+    Also searches user notes and includes papers with matching notes.
+
     Args:
         query: Full search query for vector search
         keywords: Keywords for fallback text search
@@ -248,28 +302,50 @@ def _search_local_database(
     from src.db.vector_store import get_vector_store
 
     paper_repo = PaperRepository(auto_embed=False)
+    note_repo = NoteRepository(auto_embed=False)
+
+    seen_bibcodes = set()
+    papers = []
 
     # Try vector search first
     if use_vector:
         try:
             vector_store = get_vector_store()
             vector_count = vector_store.count()
+            notes_count = vector_store.notes_count()
 
-            if vector_count > 0:
-                console.print(f"[dim]Using vector search ({vector_count} embedded papers)[/dim]")
+            if vector_count > 0 or notes_count > 0:
+                status_parts = []
+                if vector_count > 0:
+                    status_parts.append(f"{vector_count} papers")
+                if notes_count > 0:
+                    status_parts.append(f"{notes_count} notes")
+                console.print(f"[dim]Using vector search ({', '.join(status_parts)} embedded)[/dim]")
 
-                # Vector search returns bibcodes with distances
-                results = vector_store.search(query, n_results=limit)
+                # Search abstracts
+                if vector_count > 0:
+                    results = vector_store.search(query, n_results=limit)
+                    for result in results:
+                        bibcode = result["bibcode"]
+                        if bibcode not in seen_bibcodes:
+                            paper = paper_repo.get(bibcode)
+                            if paper:
+                                papers.append(paper)
+                                seen_bibcodes.add(bibcode)
 
-                # Fetch full paper objects
-                papers = []
-                for result in results:
-                    paper = paper_repo.get(result["bibcode"])
-                    if paper:
-                        papers.append(paper)
+                # Search notes
+                if notes_count > 0:
+                    note_results = vector_store.search_notes(query, n_results=limit)
+                    for result in note_results:
+                        bibcode = result["bibcode"]
+                        if bibcode not in seen_bibcodes:
+                            paper = paper_repo.get(bibcode)
+                            if paper:
+                                papers.append(paper)
+                                seen_bibcodes.add(bibcode)
 
                 if papers:
-                    return papers
+                    return papers[:limit]
 
                 console.print("[yellow]No vector results, falling back to text search[/yellow]")
         except Exception as e:
@@ -278,8 +354,6 @@ def _search_local_database(
 
     # Fallback to keyword-based text search
     console.print("[dim]Using keyword text search[/dim]")
-    results = []
-    seen_bibcodes = set()
 
     # Search by each keyword in title and abstract
     for keyword in keywords:
@@ -289,12 +363,21 @@ def _search_local_database(
         matches = paper_repo.search_by_text(keyword, limit=limit)
         for paper in matches:
             if paper.bibcode not in seen_bibcodes:
-                results.append(paper)
+                papers.append(paper)
                 seen_bibcodes.add(paper.bibcode)
 
+        # Search notes
+        note_matches = note_repo.search_by_text(keyword, limit=limit)
+        for note in note_matches:
+            if note.bibcode not in seen_bibcodes:
+                paper = paper_repo.get(note.bibcode)
+                if paper:
+                    papers.append(paper)
+                    seen_bibcodes.add(note.bibcode)
+
     # Sort by citation count
-    results.sort(key=lambda p: p.citation_count or 0, reverse=True)
-    return results[:limit]
+    papers.sort(key=lambda p: p.citation_count or 0, reverse=True)
+    return papers[:limit]
 
 
 @app.command()
@@ -726,12 +809,23 @@ def show(
     # Citation key (always use bibcode for consistency with ADS)
     table.add_row("Citation Key", paper.bibcode)
 
+    # My paper status
+    if paper.is_my_paper:
+        table.add_row("My Paper", "[green]Yes[/green]")
+
     console.print(table)
 
     # Abstract in a separate panel
     if paper.abstract:
         console.print()
         console.print(Panel(paper.abstract, title="Abstract", border_style="blue"))
+
+    # Show user note if available
+    note_repo = NoteRepository(auto_embed=False)
+    user_note = note_repo.get(paper.bibcode)
+    if user_note:
+        console.print()
+        console.print(Panel(user_note.content, title="Note", border_style="cyan"))
 
     # Show AASTeX bibitem if available
     if paper.bibitem_aastex:
@@ -1423,6 +1517,150 @@ def project_list(name: Optional[str] = typer.Argument(None, help="Project name t
             table.add_row(proj.name, proj.description or "-")
 
         console.print(table)
+
+
+@app.command()
+def mine(
+    bibcode: Optional[str] = typer.Argument(None, help="Paper bibcode to mark/unmark"),
+    unmark: bool = typer.Option(False, "--unmark", "-u", help="Unmark as my paper"),
+    list_all: bool = typer.Option(False, "--list", "-l", help="List all my papers"),
+):
+    """Mark papers as yours (authored by you).
+
+    Mark a paper as yours:
+        search-ads mine 2023ApJ...XXX
+
+    Unmark a paper:
+        search-ads mine 2023ApJ...XXX --unmark
+
+    List all your papers:
+        search-ads mine --list
+
+    Configure auto-detection by setting MY_AUTHOR_NAMES environment variable:
+        export MY_AUTHOR_NAMES="Pan, K.,Pan, Ke-Jung"
+    """
+    ensure_data_dirs()
+
+    from src.core.config import settings
+
+    paper_repo = PaperRepository(auto_embed=False)
+
+    if list_all:
+        # List all my papers
+        my_papers = paper_repo.get_my_papers(limit=100)
+        if not my_papers:
+            console.print("[yellow]No papers marked as yours[/yellow]")
+            if not settings.my_author_names:
+                console.print("[dim]Tip: Set MY_AUTHOR_NAMES env var for auto-detection[/dim]")
+            return
+
+        table = Table(title=f"My Papers ({len(my_papers)})")
+        table.add_column("Bibcode", style="cyan", no_wrap=True)
+        table.add_column("Year", style="magenta")
+        table.add_column("Title", style="white")
+        table.add_column("Citations", style="green")
+
+        for paper in my_papers:
+            title = paper.title[:50] + "..." if len(paper.title) > 50 else paper.title
+            table.add_row(
+                paper.bibcode,
+                str(paper.year) if paper.year else "-",
+                title,
+                str(paper.citation_count) if paper.citation_count else "-",
+            )
+
+        console.print(table)
+        return
+
+    if not bibcode:
+        console.print("[red]Please provide a bibcode or use --list[/red]")
+        raise typer.Exit(1)
+
+    # Parse bibcode from URL if needed
+    from src.core.ads_client import ADSClient
+    bibcode = ADSClient.parse_bibcode_from_url(bibcode) or bibcode
+
+    # Verify paper exists
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        console.print(f"[red]Paper not found in database: {bibcode}[/red]")
+        console.print("[dim]Use 'search-ads seed' to add the paper first[/dim]")
+        raise typer.Exit(1)
+
+    if unmark:
+        paper_repo.set_my_paper(bibcode, False)
+        console.print(f"[green]Unmarked as your paper: {bibcode}[/green]")
+    else:
+        paper_repo.set_my_paper(bibcode, True)
+        console.print(f"[green]Marked as your paper: {bibcode}[/green]")
+        console.print(f"[dim]{paper.title}[/dim]")
+
+
+@app.command()
+def note(
+    bibcode: str = typer.Argument(..., help="Paper bibcode"),
+    add: Optional[str] = typer.Option(None, "--add", "-a", help="Add/append a note to this paper"),
+    delete: bool = typer.Option(False, "--delete", "-d", help="Delete the note for this paper"),
+):
+    """Manage notes for papers.
+
+    Add a note:
+        search-ads note 2023ApJ...XXX --add "This paper describes..."
+
+    If a note already exists, --add will append to it.
+
+    Delete a note:
+        search-ads note 2023ApJ...XXX --delete
+
+    View a note (no flags):
+        search-ads note 2023ApJ...XXX
+    """
+    ensure_data_dirs()
+
+    from src.core.ads_client import ADSClient
+
+    # Parse bibcode from URL if needed
+    bibcode = ADSClient.parse_bibcode_from_url(bibcode) or bibcode
+
+    paper_repo = PaperRepository(auto_embed=False)
+    note_repo = NoteRepository()
+
+    # Verify paper exists
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        console.print(f"[red]Paper not found in database: {bibcode}[/red]")
+        console.print("[dim]Use 'search-ads seed' to add the paper first[/dim]")
+        raise typer.Exit(1)
+
+    if delete:
+        # Delete note
+        if note_repo.delete(bibcode):
+            console.print(f"[green]Deleted note for: {bibcode}[/green]")
+        else:
+            console.print(f"[yellow]No note found for: {bibcode}[/yellow]")
+        return
+
+    if add:
+        # Add/append note
+        note_obj = note_repo.add(bibcode, add)
+        existing = note_repo.get(bibcode)
+        if existing and "\n\n" in existing.content:
+            console.print(f"[green]Appended note for: {bibcode}[/green]")
+        else:
+            console.print(f"[green]Added note for: {bibcode}[/green]")
+
+        console.print(Panel(note_obj.content, title=f"Note for {bibcode}", border_style="cyan"))
+        return
+
+    # View note (no flags)
+    existing_note = note_repo.get(bibcode)
+    if existing_note:
+        console.print(f"[bold]{paper.title}[/bold]")
+        console.print(f"[dim]{bibcode}[/dim]\n")
+        console.print(Panel(existing_note.content, title="Note", border_style="cyan"))
+    else:
+        console.print(f"[yellow]No note for: {bibcode}[/yellow]")
+        console.print(f"[dim]Use --add to create a note[/dim]")
 
 
 if __name__ == "__main__":
