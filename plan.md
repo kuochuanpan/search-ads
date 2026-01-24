@@ -695,11 +695,36 @@ GET    /api/graph/{bibcode}           # Get citation graph data
 - [x] BibTeX file import
 - [x] API usage tracking
 
-### Phase 4: Web UI (Future)
-- [ ] FastAPI backend
-- [ ] Database browser
-- [ ] Citation graph visualization
-- [ ] PDF management UI
+### Phase 4: Web UI (In Progress)
+
+See `webui_design.md` for detailed design specifications.
+
+#### Phase 4.1: Foundation
+- [ ] FastAPI backend with all API routes
+- [ ] React frontend with TanStack Router (sidebar navigation)
+- [ ] Library view with full table features (columns, sorting, filtering, bulk actions)
+- [ ] Right-click context menu (view, find refs/citations, download, copy)
+- [ ] Paper detail view
+- [ ] Project management (dropdown, CRUD)
+
+#### Phase 4.2: Search & Discovery
+- [ ] Search view with natural language input
+- [ ] AI-powered search with "Add to Library" + project selection
+- [ ] Writing Assistant (paste LaTeX text, get BibTeX/bibitem output)
+
+#### Phase 4.3: Knowledge Graph
+- [ ] vis.js graph visualization with node design (shape, size, color)
+- [ ] Interactive exploration (pan, zoom, expand, path finding)
+- [ ] Export as image
+
+#### Phase 4.4: Import & Settings
+- [ ] Import view with project selection
+- [ ] Settings with citation count auto-update
+- [ ] Database management
+
+#### Phase 4.5: Polish
+- [ ] Keyboard shortcuts, dark mode, dashboard
+- [ ] Performance optimization
 
 ---
 
@@ -720,10 +745,13 @@ All planned improvements from the initial design have been implemented:
 
 ## Future Improvements
 
-Potential enhancements for future development:
+Potential enhancements for future development (post Phase 4):
 
-- [ ] Web UI for database browsing and management (Phase 4)
-- [ ] Citation graph visualization with D3.js
+- [ ] PDF viewer component with annotations in Web UI
+- [ ] AI Q&A about paper content
+- [ ] Full project workspace with LaTeX file linking
+- [ ] Gap analysis (missing important papers in bibliography)
+- [ ] Activity timeline and research progress tracking
 - [ ] Batch processing for multiple empty citations in parallel
 - [ ] Feedback learning from accepted/rejected paper suggestions
 - [ ] Offline mode with queued operations
