@@ -151,16 +151,14 @@ search-ads expand --all --hops 1
 search-ads expand --all --hops 2 --min-citations 10 --years 2015-2024
 ```
 
-### Other Bootstrap Methods
+### Import from BibTeX
+
 ```bash
-# Import from existing .bib file (secondary option)
+# Import from existing .bib file
 search-ads import --bib-file "my_references.bib"
 
-# Topic-based search
-search-ads init --topic "dark matter halos" --years 2020-2024 --limit 50
-
-# Learn from your own paper's citations
-search-ads learn --tex-file "my_paper.tex"
+# Import and add to a project
+search-ads import --bib-file "my_references.bib" --project "my-paper-2024"
 ```
 
 ### Recommended Bootstrap Workflow
@@ -670,26 +668,32 @@ GET    /api/graph/{bibcode}           # Get citation graph data
 
 ## Development Phases
 
-### Phase 1: Core CLI (MVP) ✅
+### Phase 1: Core CLI (MVP) ✅ Complete
 - [x] Project setup (pyproject.toml, dependencies)
-- [x] ADS API client
+- [x] ADS API client with rate limiting
 - [x] SQLite database with SQLModel
 - [x] LaTeX parser (find empty citations)
 - [x] Basic search (ADS query → results)
 - [x] Fill citation command
+- [x] BibTeX and AASTeX bibitem generation
 
-### Phase 2: Intelligence ✅
+### Phase 2: Intelligence ✅ Complete
 - [x] ChromaDB vector store setup
 - [x] Embed abstracts on paper add
-- [x] LLM-based relevance ranking
+- [x] LLM-based relevance ranking (Claude/OpenAI)
 - [x] Graph expansion (citations/references)
-- [x] Context-aware search
+- [x] Context-aware search with citation type classification
+- [x] Dual LLM backend support (Anthropic preferred, OpenAI fallback)
 
-### Phase 3: PDF & Polish ✅
-- [x] PDF download command
-- [x] PDF parsing and embedding
+### Phase 3: PDF & Polish ✅ Complete
+- [x] PDF download command (arXiv and ADS)
+- [x] PDF parsing and embedding with PyMuPDF
+- [x] Full-text semantic search in PDFs
 - [x] Claude Code skill definition
 - [x] Error handling and edge cases
+- [x] Project/collection management
+- [x] BibTeX file import
+- [x] API usage tracking
 
 ### Phase 4: Web UI (Future)
 - [ ] FastAPI backend
@@ -699,102 +703,31 @@ GET    /api/graph/{bibcode}           # Get citation graph data
 
 ---
 
-## Bug Fixes & Improvements (Current)
+## Completed Bug Fixes & Improvements
 
-### Bug 1: References/Citations Not Added to Project During Expand ✅
-**Issue**: When using `search-ads seed <bibcode> --expand --hops N --project <name>`, the references and citations fetched during expansion are not added to the specified project.
+All planned improvements from the initial design have been implemented:
 
-**Fix**: In the `seed` command, after fetching references and citations, add each paper to the target project.
+| Item | Status | Description |
+|------|--------|-------------|
+| Bug 1: Project Expand | ✅ | References/citations now added to project during `--expand` |
+| Bug 2: Fill Redesign | ✅ | New `get` command returns citation info as plain text |
+| Feature 3: Bibcode Keys | ✅ | Default citation key uses bibcode for uniqueness |
+| Feature 4: AASTeX Format | ✅ | Bibitem uses ADS export API for proper formatting |
+| Feature 5: DB Schema | ✅ | Both `bibtex` and `bibitem_aastex` stored in database |
+| Feature 6: DB Update | ✅ | Batch update command with project/age filtering |
 
-```python
-# In seed command, after fetching refs and cites:
-for ref in refs:
-    project_repo.add_paper(target_project, ref.bibcode)
-for cite in cites:
-    project_repo.add_paper(target_project, cite.bibcode)
-```
+---
 
-### Bug 2: Fill Command Redesign ✅
-**Issue**: The current `fill` command requires `--line` and `--column` arguments which should be determined by Claude Code. The command should return citation info as plain text.
+## Future Improvements
 
-**Solution**: Create a new `get` command that returns citation information (cite key, bibitem, bibtex) as plain text. Claude Code skill handles file modification.
+Potential enhancements for future development:
 
-```bash
-# New usage:
-search-ads get <bibcode>   # Returns cite key, bibitem (aastex), and bibtex entry
-search-ads get <bibcode> --format bibtex   # Returns only bibtex
-search-ads get <bibcode> --format bibitem  # Returns only bibitem (aastex)
-```
-
-**Output format**:
-```
-Cite key: 2021ApJ...914..140P
-
-Bibitem (aastex):
-\bibitem[Pan et al.(2021)]{2021ApJ...914..140P} Pan, K.-C., Liebend{\"o}rfer, M., Couch, S.~M., et al.\ 2021, \apj, 914, 2, 140. doi:10.3847/1538-4357/abfb05
-
-BibTeX:
-@ARTICLE{2021ApJ...914..140P,
-   author = {{Pan}, Kuo-Chuan and {Liebend{\"o}rfer}, M. and ...},
-   ...
-}
-```
-
-### Feature 3: Cite Key Uses Bibcode ✅
-**Change**: Default citation key format changed from `author_year` to `bibcode` for consistency with ADS.
-
-**Rationale**:
-- Bibcode is unique and consistent
-- Avoids collisions (e.g., multiple "Smith2024" papers)
-- Matches ADS convention
-
-### Feature 4: AASTeX Format Bibitem ✅
-**Issue**: Bibitem should follow aastex format which ADS provides directly.
-
-**Implementation**: Use ADS export API with `aastex` format to get properly formatted bibliography entries.
-
-```python
-# Using ads library
-query = ads.ExportQuery(bibcodes=[bibcode], format="aastex")
-aastex_entry = query.execute()
-```
-
-**Example output**:
-```latex
-\bibitem[Pan et al.(2021)]{2021ApJ...914..140P} Pan, K.-C., Liebend{\"o}rfer, M., Couch, S.~M., et al.\ 2021, \apj, 914, 2, 140. doi:10.3847/1538-4357/abfb05
-```
-
-### Feature 5: Store Bibitem and BibTeX in Database ✅
-**Schema update**: Add `bibitem_aastex` field to Paper model.
-
-```python
-class Paper(SQLModel, table=True):
-    # ... existing fields ...
-    bibtex: Optional[str] = None          # Full bibtex entry
-    bibitem_aastex: Optional[str] = None  # AASTeX bibitem format
-```
-
-### Feature 6: Database Update Command ✅
-**Issue**: Citation counts change over time. Need efficient way to update.
-
-**Implementation**: New `db update` command with batch processing.
-
-```bash
-# Update all papers (batch queries to minimize API calls)
-search-ads db update
-
-# Update specific project
-search-ads db update --project <name>
-
-# Update papers older than N days
-search-ads db update --older-than 30
-```
-
-**Efficiency strategy**:
-1. Query papers in batches of 50 (ADS allows batch queries)
-2. Only update if citation count changed
-3. Track last_updated timestamp
-4. Rate limit: stay well under 5000 calls/day
+- [ ] Web UI for database browsing and management (Phase 4)
+- [ ] Citation graph visualization with D3.js
+- [ ] Batch processing for multiple empty citations in parallel
+- [ ] Feedback learning from accepted/rejected paper suggestions
+- [ ] Offline mode with queued operations
+- [ ] Integration with Zotero/Mendeley
 
 ---
 
