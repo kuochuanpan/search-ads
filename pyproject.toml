@@ -53,6 +53,11 @@ dependencies = [
     "pydantic-settings>=2.0.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kuochuanpan/search-ads"
+Repository = "https://github.com/kuochuanpan/search-ads"
+Issues = "https://github.com/kuochuanpan/search-ads/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",

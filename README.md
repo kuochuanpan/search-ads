@@ -60,17 +60,57 @@ A CLI tool for automating scientific paper citations in LaTeX documents using NA
 
 ## Installation
 
-### From source
+### Using pipx (Recommended)
+
+[pipx](https://pipx.pypa.io/) installs CLI tools in isolated environments. This is the recommended way to install search-ads.
 
 ```bash
-git clone https://github.com/your-username/search-ads.git
+# Install pipx if you don't have it
+# macOS
+brew install pipx
+pipx ensurepath
+
+# Linux/WSL
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+
+# Then install search-ads directly from GitHub
+pipx install git+https://github.com/kuochuanpan/search-ads.git
+```
+
+To upgrade to the latest version:
+```bash
+pipx upgrade search-ads
+```
+
+To uninstall:
+```bash
+pipx uninstall search-ads
+```
+
+### Using pip
+
+```bash
+# Install directly from GitHub
+pip install git+https://github.com/kuochuanpan/search-ads.git
+
+# Or clone and install locally
+git clone https://github.com/kuochuanpan/search-ads.git
 cd search-ads
-pip install -e .
+pip install .
+```
+
+### For Development
+
+```bash
+git clone https://github.com/kuochuanpan/search-ads.git
+cd search-ads
+pip install -e ".[dev]"
 ```
 
 ### Dependencies
 
-All dependencies are managed via `pyproject.toml`. Key dependencies include:
+All dependencies are automatically installed. Key dependencies include:
 
 - `typer` & `rich` - CLI interface
 - `sqlmodel` - Database ORM
@@ -81,7 +121,22 @@ All dependencies are managed via `pyproject.toml`. Key dependencies include:
 
 ## Configuration
 
-Create a `.env` file in your project root with your API keys:
+After installation, run the init command to create the configuration file:
+
+```bash
+search-ads init
+```
+
+This creates `~/.search-ads/.env` with a template. Edit it to add your API keys:
+
+```bash
+# Open the config file
+nano ~/.search-ads/.env
+# or
+code ~/.search-ads/.env
+```
+
+Required and optional API keys:
 
 ```env
 # Required - NASA ADS API key
@@ -92,9 +147,16 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 # Optional - Alternative LLM backend (preferred when available)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Optional - Auto-detect your papers by author name
+MY_AUTHOR_NAMES="LastName, FirstInitial.,LastName, Full Name"
 ```
 
-Get your ADS API key at: https://ui.adsabs.harvard.edu/user/settings/token
+Get your API keys:
+
+- **ADS API key**: [ui.adsabs.harvard.edu/user/settings/token](https://ui.adsabs.harvard.edu/user/settings/token)
+- **OpenAI API key**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Anthropic API key**: [console.anthropic.com](https://console.anthropic.com/)
 
 ## Usage
 
