@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     # Default project
     default_project: str = Field(default="default")
 
-    # Citation key format
-    citation_key_format: Literal["author_year", "author_year_title", "bibcode"] = "author_year"
+    # Citation key format (default to bibcode for consistency with ADS)
+    citation_key_format: Literal["author_year", "author_year_title", "bibcode"] = "bibcode"
     citation_key_lowercase: bool = True
     citation_key_max_length: int = 30
 

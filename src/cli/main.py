@@ -116,12 +116,22 @@ def seed(
                 refs = ads_client.fetch_references(paper.bibcode, limit=settings.refs_limit)
                 console.print(f"  Fetched {len(refs)} references")
 
+                # Add references to project
+                for ref in refs:
+                    project_repo.add_paper(target_project, ref.bibcode)
+
                 cites = ads_client.fetch_citations(
                     paper.bibcode,
                     limit=settings.citations_limit,
                     min_citation_count=settings.min_citation_count,
                 )
                 console.print(f"  Fetched {len(cites)} citations")
+
+                # Add citations to project
+                for cite in cites:
+                    project_repo.add_paper(target_project, cite.bibcode)
+
+                console.print(f"  Added {len(refs) + len(cites)} papers to project: {target_project}")
 
         console.print("\n[green]Done![/green]")
 
@@ -290,6 +300,8 @@ def _search_local_database(
 @app.command()
 def find(
     context: str = typer.Option(..., "--context", "-c", help="Text context for the citation"),
+    author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author name"),
+    year: Optional[str] = typer.Option(None, "--year", "-y", help="Filter by year (e.g., 2020, 2018-2022)"),
     max_hops: int = typer.Option(2, "--max-hops", help="Maximum hops for graph expansion"),
     top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results to return"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Disable LLM-based analysis and ranking"),
@@ -300,14 +312,32 @@ def find(
 
     Use --local to search only the local database (faster, no API calls).
     Use --num-refs to specify how many references are needed (e.g., 2 for \\cite{,}).
+    Use --author to filter by author name (e.g., --author "Pan").
+    Use --year to filter by year (e.g., --year 2020 or --year 2018-2022).
     """
     ensure_data_dirs()
 
     ads_client = ADSClient()
     paper_repo = PaperRepository()
 
+    # Parse year filter
+    year_range = None
+    if year:
+        if "-" in year:
+            parts = year.split("-")
+            year_range = (int(parts[0]), int(parts[1]))
+        else:
+            year_range = (int(year), int(year))
+
     console.print(f"[blue]Searching for papers matching context...[/blue]")
     console.print(f"[dim]Context: {context[:100]}{'...' if len(context) > 100 else ''}[/dim]")
+    if author:
+        console.print(f"[dim]Author filter: {author}[/dim]")
+    if year_range:
+        if year_range[0] == year_range[1]:
+            console.print(f"[dim]Year filter: {year_range[0]}[/dim]")
+        else:
+            console.print(f"[dim]Year filter: {year_range[0]}-{year_range[1]}[/dim]")
     if num_refs > 1:
         console.print(f"[cyan]Looking for {num_refs} references[/cyan]")
     console.print()
@@ -347,9 +377,24 @@ def find(
             papers = _search_local_database(
                 query=search_query,
                 keywords=search_keywords,
-                limit=top_k * 3,
+                limit=top_k * 10,  # Get more to filter
                 use_vector=True,
             )
+
+            # Apply author and year filters to local results
+            if papers and (author or year_range):
+                filtered = []
+                for p in papers:
+                    # Author filter
+                    if author:
+                        if not p.authors or author.lower() not in p.authors.lower():
+                            continue
+                    # Year filter
+                    if year_range:
+                        if not p.year or not (year_range[0] <= p.year <= year_range[1]):
+                            continue
+                    filtered.append(p)
+                papers = filtered[:top_k * 3]  # Limit after filtering
 
             if not papers:
                 console.print("[yellow]No papers found in local database[/yellow]")
@@ -359,13 +404,21 @@ def find(
         else:
             # Search ADS (papers also get saved to local DB)
             console.print("[blue]Searching ADS...[/blue]")
-            papers = ads_client.search(search_query, limit=top_k * 3)
+
+            # Build query with author filter
+            ads_query = search_query
+            if author:
+                ads_query = f"({ads_query}) AND author:\"{author}\""
+
+            papers = ads_client.search(ads_query, limit=top_k * 3, year_range=year_range)
 
             if not papers and analysis:
                 # Fallback to keyword-based search
                 console.print("[yellow]No results with extracted query, trying keywords...[/yellow]")
                 keyword_query = " OR ".join(search_keywords[:3])
-                papers = ads_client.search(keyword_query, limit=top_k * 3)
+                if author:
+                    keyword_query = f"({keyword_query}) AND author:\"{author}\""
+                papers = ads_client.search(keyword_query, limit=top_k * 3, year_range=year_range)
 
             if not papers:
                 console.print("[yellow]No papers found[/yellow]")
@@ -512,6 +565,92 @@ def fill(
 
 
 @app.command()
+def get(
+    identifier: str = typer.Argument(..., help="Paper bibcode or ADS URL"),
+    format: Optional[str] = typer.Option(None, "--format", "-f", help="Output format: bibtex, bibitem, or all (default)"),
+    fetch: bool = typer.Option(False, "--fetch", help="Fetch from ADS if not in local database"),
+):
+    """Get citation information for a paper (cite key, bibitem, bibtex).
+
+    Returns plain text output suitable for use with Claude Code skill.
+    The cite key is the bibcode for consistency with ADS.
+
+    Examples:
+        search-ads get 2021ApJ...914..140P
+        search-ads get 2021ApJ...914..140P --format bibtex
+        search-ads get 2021ApJ...914..140P --format bibitem
+    """
+    ensure_data_dirs()
+
+    from src.core.ads_client import ADSClient
+
+    # Parse bibcode from URL if needed
+    bibcode = ADSClient.parse_bibcode_from_url(identifier) or identifier
+
+    paper_repo = PaperRepository(auto_embed=False)
+    paper = paper_repo.get(bibcode)
+
+    if not paper and fetch:
+        console.print(f"[blue]Fetching from ADS: {bibcode}[/blue]", err=True)
+        ads_client = ADSClient()
+        try:
+            paper = ads_client.fetch_paper(bibcode)
+        except RateLimitExceeded as e:
+            console.print(f"[red]{e}[/red]", err=True)
+            raise typer.Exit(1)
+
+    if not paper:
+        console.print(f"[red]Paper not found: {bibcode}[/red]", err=True)
+        if not fetch:
+            console.print("[dim]Use --fetch to retrieve from ADS[/dim]", err=True)
+        raise typer.Exit(1)
+
+    ads_client = ADSClient()
+
+    # Get or generate bibtex
+    bibtex = paper.bibtex
+    if not bibtex:
+        bibtex = ads_client.generate_bibtex(bibcode)
+        if bibtex:
+            paper.bibtex = bibtex
+            paper_repo.add(paper, embed=False)
+
+    # Get or generate aastex bibitem
+    bibitem_aastex = paper.bibitem_aastex
+    if not bibitem_aastex:
+        bibitem_aastex = ads_client.generate_aastex(bibcode)
+        if bibitem_aastex:
+            paper.bibitem_aastex = bibitem_aastex
+            paper_repo.add(paper, embed=False)
+
+    # Output based on format
+    if format == "bibtex":
+        if bibtex:
+            console.print(bibtex)
+        else:
+            console.print("[red]BibTeX not available[/red]", err=True)
+            raise typer.Exit(1)
+    elif format == "bibitem":
+        if bibitem_aastex:
+            console.print(bibitem_aastex)
+        else:
+            console.print("[red]Bibitem not available[/red]", err=True)
+            raise typer.Exit(1)
+    else:
+        # Output all information
+        console.print(f"Cite key: {bibcode}\n")
+
+        if bibitem_aastex:
+            console.print("Bibitem (aastex):")
+            console.print(bibitem_aastex)
+            console.print()
+
+        if bibtex:
+            console.print("BibTeX:")
+            console.print(bibtex)
+
+
+@app.command()
 def show(
     identifier: str = typer.Argument(..., help="Paper bibcode or ADS URL"),
     fetch: bool = typer.Option(False, "--fetch", "-f", help="Fetch from ADS if not in local database"),
@@ -584,12 +723,8 @@ def show(
     if paper.pdf_url:
         table.add_row("PDF URL", paper.pdf_url)
 
-    # Citation key
-    cite_key = paper.generate_citation_key(
-        format=settings.citation_key_format,
-        lowercase=settings.citation_key_lowercase,
-    )
-    table.add_row("Citation Key", cite_key)
+    # Citation key (always use bibcode for consistency with ADS)
+    table.add_row("Citation Key", paper.bibcode)
 
     console.print(table)
 
@@ -597,6 +732,11 @@ def show(
     if paper.abstract:
         console.print()
         console.print(Panel(paper.abstract, title="Abstract", border_style="blue"))
+
+    # Show AASTeX bibitem if available
+    if paper.bibitem_aastex:
+        console.print()
+        console.print(Panel(paper.bibitem_aastex, title="Bibitem (AASTeX)", border_style="magenta"))
 
     # Show BibTeX if available
     if paper.bibtex:
@@ -650,13 +790,14 @@ def list_papers(
     ensure_data_dirs()
 
     paper_repo = PaperRepository()
+    total_count = paper_repo.count()
     papers = paper_repo.get_all(limit=limit, project=project)
 
     if not papers:
         console.print("[yellow]No papers found[/yellow]")
         return
 
-    table = Table(title=f"Papers ({len(papers)})")
+    table = Table(title=f"Papers ({len(papers)}/{total_count})")
     table.add_column("Bibcode", style="cyan", no_wrap=True)
     table.add_column("Year", style="magenta")
     table.add_column("Title", style="white")
@@ -824,6 +965,71 @@ def db_embed(
     except Exception as e:
         console.print(f"[red]Error during embedding: {e}[/red]")
         raise typer.Exit(1)
+
+
+@db_app.command("update")
+def db_update(
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Update only papers in this project"),
+    older_than: Optional[int] = typer.Option(None, "--older-than", help="Update papers not updated in N days"),
+    batch_size: int = typer.Option(50, "--batch-size", help="Papers per API call (max 50)"),
+):
+    """Update citation counts for papers in the database.
+
+    Uses batch queries to minimize API calls. Only updates papers where
+    the citation count has changed.
+    """
+    ensure_data_dirs()
+
+    from datetime import datetime, timedelta
+
+    ads_client = ADSClient()
+    paper_repo = PaperRepository(auto_embed=False)
+
+    # Get papers to update
+    papers = paper_repo.get_all(limit=10000, project=project)
+
+    if not papers:
+        console.print("[yellow]No papers to update[/yellow]")
+        return
+
+    # Filter by age if specified
+    if older_than:
+        cutoff = datetime.utcnow() - timedelta(days=older_than)
+        papers = [p for p in papers if p.updated_at < cutoff]
+
+    if not papers:
+        console.print("[yellow]No papers need updating[/yellow]")
+        return
+
+    console.print(f"[blue]Updating {len(papers)} papers...[/blue]")
+
+    # Get bibcodes
+    bibcodes = [p.bibcode for p in papers]
+
+    # Batch update
+    try:
+        updates = ads_client.batch_update_papers(bibcodes, batch_size=batch_size)
+    except RateLimitExceeded as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    # Apply updates
+    updated_count = 0
+    for paper in papers:
+        if paper.bibcode in updates:
+            new_citation_count = updates[paper.bibcode].get("citation_count")
+            if new_citation_count is not None and new_citation_count != paper.citation_count:
+                old_count = paper.citation_count or 0
+                paper.citation_count = new_citation_count
+                paper.updated_at = datetime.utcnow()
+                paper_repo.add(paper, embed=False)
+                updated_count += 1
+
+                if new_citation_count > old_count:
+                    console.print(f"  {paper.bibcode}: {old_count} -> {new_citation_count} (+{new_citation_count - old_count})")
+
+    console.print(f"\n[green]Updated {updated_count} papers with changed citation counts[/green]")
+    console.print(f"[dim]API calls used: {(len(bibcodes) + batch_size - 1) // batch_size}[/dim]")
 
 
 @db_app.command("status")

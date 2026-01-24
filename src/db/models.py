@@ -23,6 +23,7 @@ class Paper(SQLModel, table=True):
     arxiv_id: Optional[str] = None
     citation_count: Optional[int] = None
     bibtex: Optional[str] = None
+    bibitem_aastex: Optional[str] = None  # AASTeX bibitem format from ADS
     pdf_url: Optional[str] = None
     pdf_path: Optional[str] = None
     pdf_embedded: bool = Field(default=False)
@@ -59,11 +60,11 @@ class Paper(SQLModel, table=True):
 
     def generate_citation_key(
         self,
-        format: str = "author_year",
+        format: str = "bibcode",
         lowercase: bool = True,
         max_length: int = 30,
     ) -> str:
-        """Generate a citation key for this paper."""
+        """Generate a citation key for this paper (default: bibcode)."""
         import re
 
         author = self.first_author

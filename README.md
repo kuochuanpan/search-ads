@@ -87,18 +87,23 @@ search-ads show 2023ApJ...XXX
 search-ads show 2023ApJ...XXX --fetch
 ```
 
-### Fill citations in LaTeX
+### Get citation information
 
 ```bash
-# Fill a single citation
-search-ads fill --bibcode "2023ApJ...XXX" --tex-file paper.tex --line 42 --column 10
+# Get citation info for a paper (cite key, bibitem, bibtex)
+search-ads get 2023ApJ...XXX
 
-# Fill multiple citations
-search-ads fill --bibcodes "2023ApJ...XXX,2022MNRAS...YYY" --tex-file paper.tex --line 42 --column 10
+# Get only bibtex entry
+search-ads get 2023ApJ...XXX --format bibtex
 
-# Specify a custom bib file
-search-ads fill --bibcode "2023ApJ...XXX" --tex-file paper.tex --bib-file refs.bib --line 42 --column 10
+# Get only bibitem (aastex format)
+search-ads get 2023ApJ...XXX --format bibitem
+
+# Fetch from ADS if not in local database
+search-ads get 2023ApJ...XXX --fetch
 ```
+
+The `get` command returns the citation key (bibcode), bibitem in AASTeX format, and BibTeX entry as plain text. This is designed for use with Claude Code - the skill handles inserting citations into your LaTeX files.
 
 ### Database management
 
@@ -114,6 +119,15 @@ search-ads db embed
 
 # Show database statistics
 search-ads db status
+
+# Update citation counts (batch update, efficient API usage)
+search-ads db update
+
+# Update papers in a specific project
+search-ads db update --project "my-paper-2024"
+
+# Update papers not updated in the last N days
+search-ads db update --older-than 30
 ```
 
 ### PDF features
@@ -137,12 +151,21 @@ search-ads pdf list
 
 ### Project management
 
+Papers can belong to multiple projects (like tags). This allows you to organize your research across different papers and topics.
+
 ```bash
 # Initialize a project to organize papers
 search-ads project init "my-paper-2024"
 
-# Add paper to project
+# Seed papers and add them to a project (including expanded refs/citations)
+search-ads seed 2023ApJ...XXX --expand --hops 2 --project "my-paper-2024"
+
+# Add an existing paper to a project
 search-ads project add-paper <bibcode> --project "my-paper-2024"
+
+# Add same paper to multiple projects
+search-ads project add-paper <bibcode> --project "ccsn"
+search-ads project add-paper <bibcode> --project "neutrinos"
 
 # List all projects
 search-ads project list
@@ -170,28 +193,42 @@ Then Claude Code can help you:
 
 ## Example Workflow
 
-1. **Seed your database** with papers from your research area:
+1. **Create a project** for your paper:
 
    ```bash
-   search-ads seed 2021Natur.589...29B --expand --hops 1
+   search-ads project init "my-ccsn-paper"
    ```
 
-2. **Embed papers** for semantic search:
+2. **Seed your database** with papers from your research area (all refs/citations added to project):
+
+   ```bash
+   search-ads seed 2021Natur.589...29B --expand --hops 1 --project "my-ccsn-paper"
+   ```
+
+3. **Embed papers** for semantic search:
 
    ```bash
    search-ads db embed
    ```
 
-3. **Find relevant papers** for your LaTeX document:
+4. **Find relevant papers** for your LaTeX document:
 
    ```bash
    search-ads find --context "Core-collapse supernovae are the primary mechanism for neutron star formation" --top-k 5
    ```
 
-4. **Fill the citation** in your LaTeX file:
+5. **Get citation information** for the paper you want to cite:
 
    ```bash
-   search-ads fill --bibcode "2021Natur.589...29B" --tex-file paper.tex --line 15 --column 28
+   search-ads get 2021Natur.589...29B
+   ```
+
+   This outputs the cite key (bibcode), bibitem (aastex format), and bibtex entry as plain text. Use Claude Code skill to insert into your LaTeX file.
+
+6. **Keep database updated** (citation counts change over time):
+
+   ```bash
+   search-ads db update --project "my-ccsn-paper"
    ```
 
 ## Data Storage

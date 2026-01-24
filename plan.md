@@ -670,32 +670,131 @@ GET    /api/graph/{bibcode}           # Get citation graph data
 
 ## Development Phases
 
-### Phase 1: Core CLI (MVP)
-- [ ] Project setup (pyproject.toml, dependencies)
-- [ ] ADS API client
-- [ ] SQLite database with SQLModel
-- [ ] LaTeX parser (find empty citations)
-- [ ] Basic search (ADS query → results)
-- [ ] Fill citation command
+### Phase 1: Core CLI (MVP) ✅
+- [x] Project setup (pyproject.toml, dependencies)
+- [x] ADS API client
+- [x] SQLite database with SQLModel
+- [x] LaTeX parser (find empty citations)
+- [x] Basic search (ADS query → results)
+- [x] Fill citation command
 
-### Phase 2: Intelligence
-- [ ] ChromaDB vector store setup
-- [ ] Embed abstracts on paper add
-- [ ] LLM-based relevance ranking
-- [ ] Graph expansion (citations/references)
-- [ ] Context-aware search
+### Phase 2: Intelligence ✅
+- [x] ChromaDB vector store setup
+- [x] Embed abstracts on paper add
+- [x] LLM-based relevance ranking
+- [x] Graph expansion (citations/references)
+- [x] Context-aware search
 
-### Phase 3: PDF & Polish
-- [ ] PDF download command
-- [ ] PDF parsing and embedding
-- [ ] Claude Code skill definition
-- [ ] Error handling and edge cases
+### Phase 3: PDF & Polish ✅
+- [x] PDF download command
+- [x] PDF parsing and embedding
+- [x] Claude Code skill definition
+- [x] Error handling and edge cases
 
-### Phase 4: Web UI
+### Phase 4: Web UI (Future)
 - [ ] FastAPI backend
 - [ ] Database browser
 - [ ] Citation graph visualization
 - [ ] PDF management UI
+
+---
+
+## Bug Fixes & Improvements (Current)
+
+### Bug 1: References/Citations Not Added to Project During Expand ✅
+**Issue**: When using `search-ads seed <bibcode> --expand --hops N --project <name>`, the references and citations fetched during expansion are not added to the specified project.
+
+**Fix**: In the `seed` command, after fetching references and citations, add each paper to the target project.
+
+```python
+# In seed command, after fetching refs and cites:
+for ref in refs:
+    project_repo.add_paper(target_project, ref.bibcode)
+for cite in cites:
+    project_repo.add_paper(target_project, cite.bibcode)
+```
+
+### Bug 2: Fill Command Redesign ✅
+**Issue**: The current `fill` command requires `--line` and `--column` arguments which should be determined by Claude Code. The command should return citation info as plain text.
+
+**Solution**: Create a new `get` command that returns citation information (cite key, bibitem, bibtex) as plain text. Claude Code skill handles file modification.
+
+```bash
+# New usage:
+search-ads get <bibcode>   # Returns cite key, bibitem (aastex), and bibtex entry
+search-ads get <bibcode> --format bibtex   # Returns only bibtex
+search-ads get <bibcode> --format bibitem  # Returns only bibitem (aastex)
+```
+
+**Output format**:
+```
+Cite key: 2021ApJ...914..140P
+
+Bibitem (aastex):
+\bibitem[Pan et al.(2021)]{2021ApJ...914..140P} Pan, K.-C., Liebend{\"o}rfer, M., Couch, S.~M., et al.\ 2021, \apj, 914, 2, 140. doi:10.3847/1538-4357/abfb05
+
+BibTeX:
+@ARTICLE{2021ApJ...914..140P,
+   author = {{Pan}, Kuo-Chuan and {Liebend{\"o}rfer}, M. and ...},
+   ...
+}
+```
+
+### Feature 3: Cite Key Uses Bibcode ✅
+**Change**: Default citation key format changed from `author_year` to `bibcode` for consistency with ADS.
+
+**Rationale**:
+- Bibcode is unique and consistent
+- Avoids collisions (e.g., multiple "Smith2024" papers)
+- Matches ADS convention
+
+### Feature 4: AASTeX Format Bibitem ✅
+**Issue**: Bibitem should follow aastex format which ADS provides directly.
+
+**Implementation**: Use ADS export API with `aastex` format to get properly formatted bibliography entries.
+
+```python
+# Using ads library
+query = ads.ExportQuery(bibcodes=[bibcode], format="aastex")
+aastex_entry = query.execute()
+```
+
+**Example output**:
+```latex
+\bibitem[Pan et al.(2021)]{2021ApJ...914..140P} Pan, K.-C., Liebend{\"o}rfer, M., Couch, S.~M., et al.\ 2021, \apj, 914, 2, 140. doi:10.3847/1538-4357/abfb05
+```
+
+### Feature 5: Store Bibitem and BibTeX in Database ✅
+**Schema update**: Add `bibitem_aastex` field to Paper model.
+
+```python
+class Paper(SQLModel, table=True):
+    # ... existing fields ...
+    bibtex: Optional[str] = None          # Full bibtex entry
+    bibitem_aastex: Optional[str] = None  # AASTeX bibitem format
+```
+
+### Feature 6: Database Update Command ✅
+**Issue**: Citation counts change over time. Need efficient way to update.
+
+**Implementation**: New `db update` command with batch processing.
+
+```bash
+# Update all papers (batch queries to minimize API calls)
+search-ads db update
+
+# Update specific project
+search-ads db update --project <name>
+
+# Update papers older than N days
+search-ads db update --older-than 30
+```
+
+**Efficiency strategy**:
+1. Query papers in batches of 50 (ADS allows batch queries)
+2. Only update if citation count changed
+3. Track last_updated timestamp
+4. Rate limit: stay well under 5000 calls/day
 
 ---
 

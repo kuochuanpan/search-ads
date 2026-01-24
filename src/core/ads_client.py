@@ -343,6 +343,73 @@ class ADSClient:
             print(f"Error generating BibTeX for {bibcode}: {e}")
             return None
 
+    def generate_aastex(self, bibcode: str) -> Optional[str]:
+        """Generate AASTeX bibitem entry for a paper.
+
+        Args:
+            bibcode: The paper's bibcode
+
+        Returns:
+            AASTeX bibitem string or None
+        """
+        bibcode = self.parse_bibcode_from_url(bibcode) or bibcode
+
+        self._check_rate_limit()
+
+        try:
+            query = ads.ExportQuery(bibcodes=[bibcode], format="aastex")
+            result = query.execute()
+            self._track_call()
+            return result
+
+        except Exception as e:
+            print(f"Error generating AASTeX for {bibcode}: {e}")
+            return None
+
+    def batch_update_papers(
+        self,
+        bibcodes: list[str],
+        batch_size: int = 50,
+    ) -> dict[str, dict]:
+        """Batch fetch updated metadata for multiple papers.
+
+        This is more efficient than fetching one paper at a time.
+
+        Args:
+            bibcodes: List of bibcodes to update
+            batch_size: Number of papers per API call (max 50)
+
+        Returns:
+            Dict mapping bibcode to updated fields (citation_count, etc.)
+        """
+        updates = {}
+
+        for i in range(0, len(bibcodes), batch_size):
+            batch = bibcodes[i:i + batch_size]
+
+            self._check_rate_limit()
+
+            try:
+                # Use OR query to fetch multiple papers at once
+                bibcode_query = " OR ".join(f"bibcode:{b}" for b in batch)
+                query = ads.SearchQuery(
+                    q=bibcode_query,
+                    fl=["bibcode", "citation_count"],
+                    rows=batch_size,
+                )
+                articles = list(query)
+                self._track_call()
+
+                for article in articles:
+                    updates[article.bibcode] = {
+                        "citation_count": article.citation_count,
+                    }
+
+            except Exception as e:
+                print(f"Error batch updating papers: {e}")
+
+        return updates
+
 
 class RateLimitExceeded(Exception):
     """Raised when API rate limit is exceeded."""
