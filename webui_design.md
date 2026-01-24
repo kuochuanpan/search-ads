@@ -95,15 +95,26 @@ The home view shows your research at a glance with intelligent summaries.
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                             │
 │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐  │
-│  │ 📚 Recent Papers    │  │ 🌟 Recommended      │  │ 📊 Your Research    │  │
+│  │ 📚 Recent Papers    │  │ ⭐ My Papers        │  │ 📊 Your Research    │  │
 │  │                     │  │                     │  │                     │  │
-│  │ Smith+24 Dark...    │  │ Based on your work  │  │ 142 papers this     │  │
-│  │ Jones+23 Stellar... │  │ on AGN feedback:    │  │ year                │  │
-│  │ Chen+23 Galaxy...   │  │                     │  │                     │  │
-│  │                     │  │ • Wang+24 "AGN..."  │  │ Top topics:         │  │
-│  │ [View All →]        │  │ • Lee+24 "Black..." │  │ • Galaxy evolution  │  │
-│  │                     │  │                     │  │ • Star formation    │  │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘  │
+│  │ Smith+24 Dark...    │  │ Papers you authored │  │ 142 papers this     │  │
+│  │ Jones+23 Stellar... │  │                     │  │ year                │  │
+│  │ Chen+23 Galaxy...   │  │ • Smith+24 (45 cit) │  │ 12 my papers        │  │
+│  │                     │  │ • Smith+22 (120 cit)│  │ 34 with notes       │  │
+│  │ [View All →]        │  │                     │  │                     │  │
+│  │                     │  │ [View All →]        │  │ Top topics:         │  │
+│  └─────────────────────┘  └─────────────────────┘  │ • Galaxy evolution  │  │
+│                                                    │ • Star formation    │  │
+│  ┌─────────────────────┐  ┌─────────────────────┐  └─────────────────────┘  │
+│  │ 🌟 Recommended      │  │ 📝 Recent Notes     │                           │
+│  │                     │  │                     │                           │
+│  │ Based on your work  │  │ Chen+23: "Key for   │                           │
+│  │ on AGN feedback:    │  │ thesis ch.3..."     │                           │
+│  │                     │  │                     │                           │
+│  │ • Wang+24 "AGN..."  │  │ Jones+22: "Compare  │                           │
+│  │ • Lee+24 "Black..." │  │ with simulations"   │                           │
+│  │                     │  │                     │                           │
+│  └─────────────────────┘  └─────────────────────┘                           │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │ 🕸️ Knowledge Graph Preview                               [Expand →]    ││
@@ -141,7 +152,7 @@ A powerful table view with smart filtering, sorting, and bulk operations.
 │  │ 🔍 Search: "galaxy formation"                                          ││
 │  │                                                                         ││
 │  │ Filters: [Year: 2020-2024 ×] [Project: AGN-paper ×] [Has PDF ×]        ││
-│  │          [+ Add Filter]                                                 ││
+│  │          [My Papers ×] [Has Note] [+ Add Filter]                        ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                             │
 │  Showing 47 of 847 papers                    Sort: [Year ▾] [Columns ⚙️]   │
@@ -171,6 +182,8 @@ A powerful table view with smart filtering, sorting, and bulk operations.
 | Year | Number | Yes | Publication year |
 | Authors | Text | Yes | Collapsed as "Smith+N", expand to see all |
 | Citations | Number | Yes | Citation count from ADS |
+| Mine | Icon | Yes | ⭐ if marked as user's own paper, — otherwise |
+| Note | Icon | Yes | 📝 if paper has a note, — otherwise (hover to preview) |
 | PDF | Icon | Yes | ✓ downloaded, ⬇ available, — none |
 | Embedded | Icon | Yes | ✓ embedded for search, — not embedded |
 | Status | Badge | Yes | Read/Unread/Cited (optional column) |
@@ -183,6 +196,9 @@ A powerful table view with smart filtering, sorting, and bulk operations.
 │ ─────────────────────────── │
 │ 🔗 Find References →        │  (Opens library view with all refs)
 │ 📚 Find Citations →         │  (Opens library view with citing papers)
+│ ─────────────────────────── │
+│ ⭐ Mark as My Paper         │  (Toggle: marks paper as user's own work)
+│ 📝 Add/Edit Note...         │  (Opens note editor modal)
 │ ─────────────────────────── │
 │ 📥 Download PDF             │
 │ 🔗 Embed PDF                │
@@ -201,6 +217,7 @@ A powerful table view with smart filtering, sorting, and bulk operations.
 - **Download All PDFs**: Download PDFs for all selected papers
 - **Embed All PDFs**: Extract and embed PDF content for semantic search
 - **Add to Project**: Add selected papers to one or more projects
+- **Mark as My Papers**: Mark selected papers as user's own work
 - **Export BibTeX**: Export bibliography entries for selected papers
 - **Update Citations**: Refresh citation counts from ADS
 - **Remove from Library**: Delete selected papers (with confirmation)
@@ -208,12 +225,13 @@ A powerful table view with smart filtering, sorting, and bulk operations.
 **Features:**
 
 - **Semantic Search**: Not just keywords—understands meaning
-- **Smart Filters**: Year range, projects, PDF status, embedded status, citation count
+- **Smart Filters**: Year range, projects, PDF status, embedded status, citation count, My Papers, Has Note
 - **Column Visibility**: Toggle columns on/off via settings button
-- **Expandable Rows**: Click to expand and see abstract inline
+- **Expandable Rows**: Click to expand and see abstract inline (includes note preview if available)
 - **Sortable Columns**: Click column header to sort ascending/descending
 - **Virtualized Table**: TanStack Table for smooth scrolling with 1000+ papers
 - **Inline Preview**: Hover to see abstract tooltip without leaving the list
+- **Note Preview**: Hover over note icon to see note content in tooltip
 
 ---
 
@@ -226,13 +244,14 @@ A comprehensive view of a single paper with all actions available.
 │  ← Back to Library                                                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  Dark Matter Halos in Galaxy Formation: A Comprehensive Study               │
-│  ═══════════════════════════════════════════════════════════                │
+│  Dark Matter Halos in Galaxy Formation: A Comprehensive Study    ⭐ MY PAPER│
+│  ═══════════════════════════════════════════════════════════════════════════│
 │                                                                             │
 │  Smith, J. · Johnson, A. · Williams, B.            2024 · ApJ · 996 · 35    │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │ [📄 View PDF] [📋 Copy BibTeX] [🔗 ADS] [📎 arXiv] [🏷️ Add to Project]│   │
+│  │ [⭐ Toggle My Paper]                                                  │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  ┌─────────────────┬───────────────────────────────────────────────────────┐│
@@ -242,24 +261,31 @@ A comprehensive view of a single paper with all actions available.
 │  │  Citations: 45  │  We present a comprehensive study of dark matter      ││
 │  │  References: 32 │  halo formation in the context of galaxy evolution.   ││
 │  │  Read: Yes ✓    │  Using high-resolution simulations, we demonstrate    ││
-│  │                 │  that halo concentration correlates strongly with     ││
-│  │  ────────────── │  formation time, consistent with theoretical          ││
-│  │                 │  predictions. Our results suggest that...             ││
-│  │  🏷️ Projects    │                                                       ││
-│  │                 │  [Show full abstract]                                 ││
-│  │  • AGN-paper    │                                                       ││
-│  │  • thesis       │  ────────────────────────────────────────────────     ││
-│  │  [+ Add]        │                                                       ││
-│  │                 │  🤖 AI Summary                                        ││
-│  │  ────────────── │                                                       ││
-│  │                 │  This paper establishes that dark matter halo         ││
-│  │  📁 Files       │  concentration is primarily determined by formation   ││
-│  │                 │  time. Key for: galaxy evolution intro, DM background ││
-│  │  PDF: ✓ Local   │                                                       ││
-│  │  Embedded: ✓    │  Citation type: Foundational                          ││
+│  │  My Paper: ⭐   │  that halo concentration correlates strongly with     ││
+│  │                 │  formation time, consistent with theoretical          ││
+│  │  ────────────── │  predictions. Our results suggest that...             ││
 │  │                 │                                                       ││
+│  │  🏷️ Projects    │  [Show full abstract]                                 ││
+│  │                 │                                                       ││
+│  │  • AGN-paper    │  ────────────────────────────────────────────────     ││
+│  │  • thesis       │                                                       ││
+│  │  [+ Add]        │  🤖 AI Summary                                        ││
+│  │                 │                                                       ││
+│  │  ────────────── │  This paper establishes that dark matter halo         ││
+│  │                 │  concentration is primarily determined by formation   ││
+│  │  📁 Files       │  time. Key for: galaxy evolution intro, DM background ││
+│  │                 │                                                       ││
+│  │  PDF: ✓ Local   │  Citation type: Foundational                          ││
+│  │  Embedded: ✓    │                                                       ││
+│  │                 │  ────────────────────────────────────────────────     ││
 │  │  [Open PDF]     │                                                       ││
-│  │  [Re-embed]     │                                                       ││
+│  │  [Re-embed]     │  📝 Your Note                              [✏️ Edit]  ││
+│  │                 │                                                       ││
+│  │                 │  This is an important paper for my thesis chapter 3.  ││
+│  │                 │  Key finding: halo concentration depends on formation ││
+│  │                 │  time. Compare with Jones+22 results.                 ││
+│  │                 │                                                       ││
+│  │                 │  [Delete Note]                                        ││
 │  │                 │                                                       ││
 │  └─────────────────┴───────────────────────────────────────────────────────┘│
 │                                                                             │
@@ -297,6 +323,8 @@ A comprehensive view of a single paper with all actions available.
 - **Related Papers**: Semantic similarity suggestions
 - **Quick Actions**: Copy citation, open PDF, view on ADS/arXiv
 - **Project Management**: Add/remove from projects
+- **My Paper Badge**: Toggle whether this paper is authored by you (⭐ indicator)
+- **User Notes**: View, add, edit, or delete personal notes on the paper
 - **PDF Status**: Download, embed for search, open in viewer
 
 ---
@@ -359,17 +387,57 @@ Each node in the graph represents a paper with visual encoding:
 | **Edge thickness** | Based on citation importance |
 | **Edge direction** | Arrow points from citing → cited paper |
 
-**Hover Tooltip:**
-- Full paper title
-- All authors
-- Journal, year
-- Citation count
-- Abstract preview (first 200 chars)
+**Hover Preview (Tooltip):**
+
+When the mouse cursor moves over a node, display a tooltip with paper details:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Dark Matter Halos in Galaxy Formation                   │
+│                                                         │
+│ Smith, J. · Johnson, A. · Williams, B.            2024  │
+│                                                         │
+│ We present a comprehensive study of dark matter halo    │
+│ formation in the context of galaxy evolution. Using     │
+│ high-resolution simulations, we demonstrate that halo   │
+│ concentration correlates strongly with formation...     │
+│                                                         │
+│ 📊 45 citations · 32 references                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **Title**: Full paper title
+- **Authors**: All authors (or first 3 + "et al." if many)
+- **Year**: Publication year
+- **Abstract**: First 200-300 characters with ellipsis
+- **Stats**: Citation and reference counts
 
 **Click Actions:**
 - Single click: Select node, show details panel
 - Double click: Expand 1 hop (fetch refs/citations)
-- Right click: Context menu (View, Add to Library, Find Refs, etc.)
+
+**Right-Click Context Menu:**
+
+```
+┌─────────────────────────────────┐
+│ 📄 View Paper Details           │
+│ ─────────────────────────────── │
+│ 📚 Add to Library...            │  (If not in library)
+│ ─────────────────────────────── │
+│ 🔗 Expand References (+1 hop)   │
+│ 📖 Expand Citations (+1 hop)    │
+│ 🔄 Expand Both (+1 hop)         │
+│ ─────────────────────────────── │
+│ ❌ Remove from Graph            │  (Removes node and its edges)
+└─────────────────────────────────┘
+```
+
+- **View Paper Details**: Navigate to paper detail view
+- **Add to Library**: Opens project selection dropdown (if paper not in library)
+- **Expand References**: Fetch and display papers this paper cites
+- **Expand Citations**: Fetch and display papers that cite this paper
+- **Expand Both**: Fetch both references and citations in one action
+- **Remove from Graph**: Remove this node from the current visualization (does not delete from library)
 
 #### Recommended Visualization Library
 
@@ -480,61 +548,99 @@ The most powerful feature—understanding what you're looking for.
 
 ---
 
-### 6. PDF Reader & Annotation
+### 6. PDF Management (System Viewer)
 
-An integrated PDF viewer with AI-powered features.
+PDFs open in your system's default viewer (Preview on macOS, Adobe Reader, etc.) for reading and annotation. This leverages mature, feature-rich tools users already know.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  📄 Smith+24 - Dark Matter Halos...                    [← Back] [⬇️ Export]│
+│  Paper Detail View                                                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────────────────────────────────────────────────────┐ ┌─────────┐│
-│  │                                                             │ │ 📑 TOC  ││
-│  │  ┌─────────────────────────────────────────────────────┐   │ │         ││
-│  │  │                                                     │   │ │ Abstract││
-│  │  │                     PDF CONTENT                     │   │ │ 1. Intro││
-│  │  │                                                     │   │ │ 2. Data ││
-│  │  │  We present a comprehensive study of dark matter    │   │ │ 3. Meth ││
-│  │  │  halo formation in the context of galaxy            │   │ │ 4. Res  ││
-│  │  │  evolution. Using high-resolution simulations...    │   │ │ 5. Disc ││
-│  │  │                                                     │   │ │ 6. Conc ││
-│  │  │  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │   │ │ Refs    ││
-│  │  │  [Highlighted text - user annotation]               │   │ │         ││
-│  │  │  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │   │ ├─────────┤│
-│  │  │                                                     │   │ │ 📝 Notes││
-│  │  │                                                     │   │ │         ││
-│  │  └─────────────────────────────────────────────────────┘   │ │ Key     ││
-│  │                                                             │ │ finding:││
-│  │  Page 3 of 15                    [◀ Prev] [Next ▶]         │ │ halo    ││
-│  │                                                             │ │ conc... ││
-│  └─────────────────────────────────────────────────────────────┘ │         ││
-│                                                                   │ [+ Add] ││
-│  ┌─────────────────────────────────────────────────────────────┐ └─────────┘│
-│  │ 🔍 Search in PDF: [                              ] [Search] │           │
-│  │                                                             │           │
-│  │ 🤖 Ask AI about this paper:                                 │           │
-│  │ ┌─────────────────────────────────────────────────────────┐ │           │
-│  │ │ What is the main methodology used in this paper?       │ │           │
-│  │ └─────────────────────────────────────────────────────────┘ │           │
-│  │ [Ask]                                                       │           │
-│  └─────────────────────────────────────────────────────────────┘           │
+│  📁 PDF Actions                                                             │
+│  ────────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  [📂 Open PDF]        Opens in system viewer (Preview, Adobe Reader, etc.)  │
+│  [📥 Download PDF]    Download from ADS if not already local                │
+│  [🔗 Embed for Search] Extract text for semantic search                     │
+│                                                                             │
+│  ────────────────────────────────────────────────────────────────────────── │
+│                                                                             │
+│  🤖 Ask AI About This Paper                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ What is the main methodology used in this paper?                        ││
+│  └────────────────────────────────────��────────────────────────────────────┘│
+│  [Ask]                                                                      │
+│                                                                             │
+│  AI uses the embedded PDF text to answer questions about paper content.     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why system viewer instead of custom?**
+
+- **Rich annotations**: Highlights, notes, shapes, signatures already built-in
+- **Familiar interface**: Users know their PDF reader
+- **No development cost**: Focus engineering effort elsewhere
+- **Annotations persist**: Stored in the PDF file itself
+
+**Features:**
+
+- **Open PDF**: Single click opens in system default viewer
+- **AI Q&A**: Ask questions using embedded text (works via modal in paper detail view)
+- **Embed for Search**: Extract and index PDF content for semantic search
+- **Download**: Fetch PDF from ADS if not already local
+
+---
+
+### 7. Note Editor Modal
+
+A modal dialog for adding and editing notes on papers. Accessible from:
+- Right-click context menu → "Add/Edit Note..."
+- Paper detail view → "Edit" button in note section
+- Library view → Click on note icon
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  📝 Note for: Smith+24 "Dark Matter Halos in Galaxy Formation..."      [×]  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ This is an important paper for my thesis chapter 3.                     ││
+│  │                                                                         ││
+│  │ Key findings:                                                           ││
+│  │ - Halo concentration depends primarily on formation time                ││
+│  │ - Results consistent with theoretical predictions                       ││
+│  │ - Compare with Jones+22 for alternative interpretation                  ││
+│  │                                                                         ││
+│  │ TODO: Read section 4 more carefully for simulation details.             ││
+│  │                                                                         ││
+│  │                                                                         ││
+│  │                                                                         ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ 💡 Tip: Use markdown formatting. Notes are searchable in the library.   ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                                                             │
+│  Last updated: 2024-01-15 14:32                                             │
+│                                                                             │
+│                                      [Delete Note]  [Cancel]  [Save Note]   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Features:**
-- **Integrated Viewer**: Read PDFs without leaving the app
-- **Text Highlighting**: Select and annotate text
-- **Notes Panel**: Add notes linked to specific pages/sections
-- **Table of Contents**: Quick navigation for longer papers
-- **In-PDF Search**: Find text within the document
-- **AI Q&A**: Ask questions about the paper content
-- **Export Annotations**: Save highlights and notes separately
+- **Rich Text Editor**: Supports markdown formatting (bold, lists, headers)
+- **Auto-Save**: Optional auto-save as you type (configurable in settings)
+- **Searchable**: Notes are indexed and searchable from the library
+- **Timestamps**: Shows when note was created and last updated
+- **Delete Option**: Remove note with confirmation
+- **Keyboard Shortcuts**: `⌘S` to save, `Esc` to cancel
 
 ---
 
-### 7. Writing Assistant Panel
+### 8. Writing Assistant Panel
 
 A dedicated interface for finding citations by pasting LaTeX text. No file upload needed—just paste your text and get citation suggestions.
 
@@ -617,7 +723,7 @@ A dedicated interface for finding citations by pasting LaTeX text. No file uploa
 
 ---
 
-### 8. Project Management (Simplified)
+### 9. Project Management (Simplified)
 
 > **Note**: Full project workspace with LaTeX file linking, gap analysis, and activity tracking is deferred to a future version. Writing workflows are handled via CLI + Claude Code skills.
 
@@ -637,7 +743,7 @@ Basic operations available:
 
 ---
 
-### 9. Import & Sync
+### 10. Import & Sync
 
 Flexible ways to get papers into your library.
 
@@ -730,7 +836,7 @@ Flexible ways to get papers into your library.
 
 ---
 
-### 10. Settings & Configuration
+### 11. Settings & Configuration
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -831,7 +937,7 @@ Power users should be able to do everything without touching the mouse.
 │  State:         Zustand (lightweight) or TanStack Query (for API state)     │
 │  Styling:       Tailwind CSS + shadcn/ui components                         │
 │  Graph:         D3.js or vis.js for citation network visualization          │
-│  PDF:           react-pdf or PDF.js for embedded viewer                     │
+│  PDF:           System viewer (Preview, Adobe Reader, etc.)                 │
 │  Tables:        TanStack Table for sortable, filterable lists               │
 │  Routing:       React Router or TanStack Router                             │
 │  Build:         Vite                                                        │
@@ -853,6 +959,12 @@ Power users should be able to do everything without touching the mouse.
 │                                                                             │
 │  API Structure:                                                             │
 │  ├── /api/papers/          - CRUD for papers                                │
+│  │   ├── PATCH /{bibcode}/mine  - Toggle "my paper" status                  │
+│  │   └── GET /mine         - List all papers marked as mine                 │
+│  ├── /api/notes/           - Note management                                │
+│  │   ├── GET /{bibcode}    - Get note for a paper                           │
+│  │   ├── PUT /{bibcode}    - Create/update note for a paper                 │
+│  │   └── DELETE /{bibcode} - Delete note for a paper                        │
 │  ├── /api/projects/        - Project management                             │
 │  ├── /api/search/          - Search endpoints                               │
 │  │   ├── POST /semantic    - Semantic search with LLM                       │
@@ -864,7 +976,7 @@ Power users should be able to do everything without touching the mouse.
 │  ├── /api/pdf/             - PDF operations                                 │
 │  │   ├── POST /download    - Download PDF                                   │
 │  │   ├── POST /embed       - Embed PDF for search                           │
-│  │   └── GET /content      - Get PDF content for viewer                     │
+│  │   └── GET /path         - Get local PDF path to open in system viewer    │
 │  ├── /api/import/          - Import endpoints                               │
 │  │   ├── POST /ads         - Import from ADS                                │
 │  │   ├── POST /bibtex      - Import from BibTeX                             │
@@ -982,8 +1094,6 @@ Power users should be able to do everything without touching the mouse.
 
 ### Future Enhancements (Post-MVP)
 
-- [ ] PDF viewer component with annotations
-- [ ] AI Q&A about paper content
 - [ ] Full project workspace with LaTeX file linking
 - [ ] Gap analysis (missing important papers)
 - [ ] Activity timeline and research progress tracking
@@ -1005,6 +1115,8 @@ All CLI commands should have corresponding Web UI features:
 | `expand` | Graph view (expand buttons) | Expand refs/citations from nodes |
 | `status` | Dashboard + Settings | Database stats, API usage |
 | `list-papers` | Library view | Full table with sorting/filtering |
+| `mine` | Library (column + right-click), Paper detail | Mark papers as user's own work |
+| `note` | Library (column + click), Paper detail, Note modal | Add/edit/delete notes on papers |
 | `db clear` | Settings (danger zone) | Clear all data with confirmation |
 | `db embed` | Library (bulk action) | Embed selected/all papers |
 | `db update` | Settings (citation updates) | Update citation counts |
