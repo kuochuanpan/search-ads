@@ -1024,16 +1024,20 @@ Power users should be able to do everything without touching the mouse.
 ### Phase 4.1: Foundation
 **Goal**: Basic paper browsing, management, and API backend
 
-- [ ] FastAPI backend with all API routes (papers, projects, search, import, pdf, settings)
+- [ ] FastAPI backend with all API routes (papers, projects, search, import, pdf, notes, settings)
 - [ ] React frontend with TanStack Router (sidebar navigation)
-- [ ] Library view with TanStack Table (all columns: checkbox, title, year, authors, citations, PDF, embedded, status)
-- [ ] Column sorting, filtering, visibility toggle
-- [ ] Right-click context menu (view, find refs/citations, download, copy)
-- [ ] Bulk actions for selected papers
-- [ ] Paper detail view with metadata and actions
+- [ ] Library view with TanStack Table (all columns: checkbox, title, year, authors, citations, mine, note, PDF, embedded)
+- [ ] Column sorting, filtering (including "My Papers" and "Has Note" filters), visibility toggle
+- [ ] Expandable rows with abstract inline (click row to expand)
+- [ ] Hover preview for abstract tooltip
+- [ ] Right-click context menu (view, find refs/citations, mark as mine, add/edit note, download, copy)
+- [ ] Bulk actions for selected papers (including "Mark as My Papers")
+- [ ] Paper detail view with metadata, actions, and "My Paper" toggle
+- [ ] Note Editor Modal (add/edit/delete notes with markdown support)
+- [ ] Note preview on hover in Library view
 - [ ] Project dropdown in header with CRUD operations
 
-**Deliverable**: Functional paper library browser with full table features
+**Deliverable**: Functional paper library browser with full table features, notes, and "my papers" tracking
 
 ### Phase 4.2: Search & Discovery
 **Goal**: AI-powered search with library integration
@@ -1047,6 +1051,7 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Writing Assistant panel (paste LaTeX text, get suggestions)
 - [ ] BibTeX / AASTeX bibitem output format toggle
 - [ ] Copy to clipboard functionality
+- [ ] AI Q&A about paper (ask questions using embedded PDF text)
 
 **Deliverable**: Smart search, discovery, and writing assistant features
 
@@ -1064,8 +1069,11 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Multiple layout options (force-directed, hierarchical)
 - [ ] Graph filtering (year, project, citation count)
 - [ ] Export as PNG/SVG image
+- [ ] Citation Network preview in Paper Detail view
+- [ ] Related Papers section in Paper Detail view (semantic similarity suggestions)
+- [ ] AI Summary generation for Paper Detail view
 
-**Deliverable**: Fully interactive citation network visualization
+**Deliverable**: Fully interactive citation network visualization with paper detail integration
 
 ### Phase 4.4: Import & Settings
 **Goal**: Data import and configuration management
@@ -1084,7 +1092,13 @@ Power users should be able to do everything without touching the mouse.
 
 - [ ] Keyboard shortcuts (⌘K search, j/k navigation, etc.)
 - [ ] Dark mode toggle
-- [ ] Dashboard view with stats, recent papers, recommendations
+- [ ] Dashboard view with:
+  - [ ] Research stats (papers this year, my papers count, papers with notes)
+  - [ ] Recent Papers card
+  - [ ] My Papers card (papers user authored with citation counts)
+  - [ ] Recent Notes card
+  - [ ] AI Recommendations card ("Papers you might need")
+  - [ ] Knowledge Graph Preview widget
 - [ ] Performance optimization (virtualized lists, lazy loading)
 - [ ] Error handling and user feedback (toasts, modals)
 - [ ] Loading states and skeleton screens

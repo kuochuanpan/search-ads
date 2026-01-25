@@ -1663,5 +1663,37 @@ def note(
         console.print(f"[dim]Use --add to create a note[/dim]")
 
 
+@app.command()
+def web(
+    host: str = typer.Option(settings.web_host, "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(settings.web_port, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
+):
+    """Start the web UI server.
+
+    The web UI provides a browser-based interface for managing your paper library,
+    searching papers, and visualizing citation networks.
+
+    Examples:
+        search-ads web                    # Start on default port 9527
+        search-ads web --port 8080        # Start on port 8080
+        search-ads web --reload           # Start with auto-reload for development
+    """
+    ensure_data_dirs()
+
+    import uvicorn
+
+    console.print(f"[bold green]Starting Search-ADS Web UI[/bold green]")
+    console.print(f"[blue]Server: http://{host}:{port}[/blue]")
+    console.print(f"[dim]Press Ctrl+C to stop[/dim]\n")
+
+    uvicorn.run(
+        "src.web.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 if __name__ == "__main__":
     app()
