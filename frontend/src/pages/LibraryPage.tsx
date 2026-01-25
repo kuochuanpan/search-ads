@@ -50,52 +50,52 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Library</h1>
-          <p className="text-muted-foreground">
-            {data?.total || 0} papers
-            {project && ` in ${project}`}
-          </p>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Library</h1>
+            <p className="text-muted-foreground">
+              {data?.total || 0} papers
+              {project && ` in ${project}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate({ to: '/import' })}>
+              <Icon icon={Download} size={16} />
+              Import
+            </Button>
+            <Button onClick={() => navigate({ to: '/import' })}>
+              <Icon icon={Plus} size={16} />
+              Add Paper
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate({ to: '/import' })}>
-            <Icon icon={Download} size={16} />
-            Import
-          </Button>
-          <Button onClick={() => navigate({ to: '/import' })}>
-            <Icon icon={Plus} size={16} />
-            Add Paper
-          </Button>
-        </div>
-      </div>
 
-      {/* Filters */}
-      <LibraryFilters filters={filters} onChange={setFilters} />
+        {/* Filters */}
+        <LibraryFilters filters={filters} onChange={setFilters} />
 
-      {/* Bulk Actions Bar */}
-      {selectedCount() > 0 && (
-        <BulkActionsBar selectedBibcodes={Array.from(selectedBibcodes)} />
-      )}
+        {/* Bulk Actions Bar */}
+        {selectedCount() > 0 && (
+          <BulkActionsBar selectedBibcodes={Array.from(selectedBibcodes)} />
+        )}
 
-      {/* Loading / Error States */}
-      {isLoading && (
-        <div className="py-8 text-center text-muted-foreground">
-          Loading papers...
-        </div>
-      )}
+        {/* Loading / Error States */}
+        {isLoading && (
+          <div className="py-8 text-center text-muted-foreground">
+            Loading papers...
+          </div>
+        )}
 
-      {error && (
-        <div className="py-8 text-center text-destructive">
-          Error loading papers: {error.message}
-        </div>
-      )}
+        {error && (
+          <div className="py-8 text-center text-destructive">
+            Error loading papers: {error.message}
+          </div>
+        )}
 
-      {/* Table */}
-      {!isLoading && !error && data && (
-        <PaperTable data={data.papers} onRowClick={handleRowClick} />
-      )}
+        {/* Table */}
+        {!isLoading && !error && data && (
+          <PaperTable data={data.papers} onRowClick={handleRowClick} />
+        )}
     </div>
   )
 }

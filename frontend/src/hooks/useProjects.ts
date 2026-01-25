@@ -51,6 +51,7 @@ export function useAddPaperToProject() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['papers'] })
+      queryClient.invalidateQueries({ queryKey: ['paper'] })
     },
   })
 }

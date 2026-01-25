@@ -1,21 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, Upload, Clipboard, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
 import { Input } from '@/components/ui/Input'
 import { useProjects } from '@/hooks/useProjects'
+import { useActiveProject } from '@/store'
 import { api } from '@/lib/api'
 
 export function ImportPage() {
   const { data: projects } = useProjects()
+  const { project: activeProject } = useActiveProject()
 
   // ADS Import
   const [adsUrl, setAdsUrl] = useState('')
   const [expandRefs, setExpandRefs] = useState(true)
   const [expandCitations, setExpandCitations] = useState(false)
   const [downloadPdf, setDownloadPdf] = useState(true)
-  const [selectedProject, setSelectedProject] = useState<string>('')
+  const [selectedProject, setSelectedProject] = useState<string>(activeProject || '')
+
+  // Update selected project when active project changes
+  useEffect(() => {
+    if (activeProject) {
+      setSelectedProject(activeProject)
+    }
+  }, [activeProject])
   const [adsLoading, setAdsLoading] = useState(false)
   const [adsResult, setAdsResult] = useState<{ success: boolean; message: string } | null>(null)
 

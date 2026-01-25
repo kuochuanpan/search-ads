@@ -22,12 +22,15 @@ import {
   Copy,
   Trash2,
   Network,
+  FolderPlus,
+  ChevronRight,
 } from 'lucide-react'
 import { Paper, api } from '@/lib/api'
 import { formatAuthorList, cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/Icon'
 import { usePaperSelection } from '@/store'
 import { useToggleMyPaper, useDeletePaper, useDownloadPdf, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
+import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useNote } from '@/hooks/useNotes'
 import { Loader2 } from 'lucide-react'
 
@@ -85,6 +88,8 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
   const downloadPdf = useDownloadPdf()
   const openPdf = useOpenPdf()
   const embedPdf = useEmbedPdf()
+  const { data: projectsData } = useProjects()
+  const addPaperToProject = useAddPaperToProject()
 
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'updated_at', desc: true },
@@ -96,6 +101,8 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
     y: 0,
     paper: null,
   })
+
+  const [showProjectSubmenu, setShowProjectSubmenu] = useState(false)
 
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -173,6 +180,19 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
 
   const closeContextMenu = () => {
     setContextMenu({ ...contextMenu, isOpen: false })
+    setShowProjectSubmenu(false)
+  }
+
+  const handleAddToProject = async (projectName: string) => {
+    const paper = contextMenu.paper
+    if (!paper) return
+
+    try {
+      await addPaperToProject.mutateAsync({ projectName, bibcode: paper.bibcode })
+      closeContextMenu()
+    } catch (e) {
+      console.error('Failed to add paper to project:', e)
+    }
   }
 
   const handleContextAction = async (action: string) => {
@@ -560,6 +580,47 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
             <Icon icon={Star} size={16} className={contextMenu.paper.is_my_paper ? 'text-yellow-500' : ''} />
             {contextMenu.paper.is_my_paper ? 'Unmark as My Paper' : 'Mark as My Paper'}
           </button>
+
+          {/* Add to Project */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowProjectSubmenu(true)}
+            onMouseLeave={() => setShowProjectSubmenu(false)}
+          >
+            <button
+              className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-left hover:bg-secondary"
+            >
+              <span className="flex items-center gap-2">
+                <Icon icon={FolderPlus} size={16} />
+                Add to Project
+              </span>
+              <Icon icon={ChevronRight} size={14} />
+            </button>
+            {showProjectSubmenu && (
+              <div className="absolute left-full top-0 ml-1 w-48 bg-card border rounded-lg shadow-lg py-1 z-50">
+                {projectsData?.projects.length === 0 && (
+                  <p className="text-xs text-muted-foreground px-3 py-2">No projects yet</p>
+                )}
+                {projectsData?.projects.map((project) => {
+                  const isInProject = contextMenu.paper?.projects.includes(project.name)
+                  return (
+                    <button
+                      key={project.name}
+                      onClick={() => handleAddToProject(project.name)}
+                      disabled={isInProject}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-1.5 text-sm text-left hover:bg-secondary',
+                        isInProject && 'opacity-50 cursor-not-allowed'
+                      )}
+                    >
+                      <span className="truncate">{project.name}</span>
+                      {isInProject && <Icon icon={Check} size={14} className="text-green-500" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
 
           <div className="my-1 border-t" />
 

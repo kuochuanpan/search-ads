@@ -15,7 +15,7 @@ import {
   Send,
   Loader2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -23,8 +23,9 @@ import { Icon } from '@/components/ui/Icon'
 import { Modal } from '@/components/ui/Modal'
 import { usePaper, useToggleMyPaper, useDeletePaper } from '@/hooks/usePapers'
 import { useNote, useCreateOrUpdateNote, useDeleteNote } from '@/hooks/useNotes'
+import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useAskPaper } from '@/hooks/useSearch'
-import { formatAuthorList } from '@/lib/utils'
+import { formatAuthorList, cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 
 export function PaperDetailPage() {
@@ -32,10 +33,12 @@ export function PaperDetailPage() {
   const { bibcode } = useParams({ from: '/library/$bibcode' })
   const { data: paper, isLoading, error } = usePaper(bibcode)
   const { data: note } = useNote(bibcode)
+  const { data: projectsData } = useProjects()
   const toggleMyPaper = useToggleMyPaper()
   const deletePaper = useDeletePaper()
   const createOrUpdateNote = useCreateOrUpdateNote()
   const deleteNote = useDeleteNote()
+  const addPaperToProject = useAddPaperToProject()
 
   const [showNoteModal, setShowNoteModal] = useState(false)
   const [noteContent, setNoteContent] = useState('')
@@ -43,8 +46,33 @@ export function PaperDetailPage() {
   const [copiedCiteKey, setCopiedCiteKey] = useState(false)
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiAnswer, setAiAnswer] = useState<{ answer: string; sources: string[] } | null>(null)
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false)
+
+  const projectDropdownRef = useRef<HTMLDivElement>(null)
 
   const askPaper = useAskPaper()
+
+  // Close project dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
+        setShowProjectDropdown(false)
+      }
+    }
+    if (showProjectDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showProjectDropdown])
+
+  const handleAddToProject = async (projectName: string) => {
+    try {
+      await addPaperToProject.mutateAsync({ projectName, bibcode })
+      setShowProjectDropdown(false)
+    } catch (e) {
+      console.error('Failed to add paper to project:', e)
+    }
+  }
 
   const handleCopyBibtex = async () => {
     if (paper?.bibtex) {
@@ -277,10 +305,43 @@ export function PaperDetailPage() {
                 ))}
               </div>
             )}
-            <Button variant="ghost" size="sm" className="mt-2 w-full">
-              <Icon icon={FolderPlus} size={14} />
-              Add to Project
-            </Button>
+            <div className="relative mt-2" ref={projectDropdownRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full"
+                onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+              >
+                <Icon icon={FolderPlus} size={14} />
+                Add to Project
+              </Button>
+              {showProjectDropdown && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-card border rounded-lg shadow-lg py-1 z-10 max-h-48 overflow-auto">
+                  {projectsData?.projects.length === 0 && (
+                    <p className="text-xs text-muted-foreground px-3 py-2">
+                      No projects yet. Create one in the Library view.
+                    </p>
+                  )}
+                  {projectsData?.projects.map((project) => {
+                    const isInProject = paper.projects.includes(project.name)
+                    return (
+                      <button
+                        key={project.name}
+                        onClick={() => handleAddToProject(project.name)}
+                        disabled={isInProject}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-1.5 text-sm text-left hover:bg-secondary',
+                          isInProject && 'opacity-50 cursor-not-allowed'
+                        )}
+                      >
+                        <span className="truncate">{project.name}</span>
+                        {isInProject && <Icon icon={Check} size={14} className="text-green-500" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* Danger zone */}
