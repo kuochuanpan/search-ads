@@ -93,3 +93,35 @@ export function useMyPapers(limit = 100) {
     queryFn: () => api.getMyPapers(limit),
   })
 }
+
+export function useDownloadPdf() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (bibcode: string) => api.downloadPdf(bibcode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers'] })
+      queryClient.invalidateQueries({ queryKey: ['paper'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+}
+
+export function useOpenPdf() {
+  return useMutation({
+    mutationFn: (bibcode: string) => api.openPdf(bibcode),
+  })
+}
+
+export function useEmbedPdf() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (bibcode: string) => api.embedPdf(bibcode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers'] })
+      queryClient.invalidateQueries({ queryKey: ['paper'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+}

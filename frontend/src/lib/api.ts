@@ -83,6 +83,112 @@ export interface SettingsResponse {
   has_anthropic_key: boolean
 }
 
+// AI Search types
+export interface AIAnalysis {
+  topic: string
+  claim: string
+  citation_type_needed: string
+  keywords: string[]
+  reasoning: string
+}
+
+export interface SearchResultItem {
+  bibcode: string
+  title: string
+  year?: number
+  first_author?: string
+  authors?: string[]
+  abstract?: string
+  citation_count?: number
+  relevance_score: number
+  relevance_explanation: string
+  citation_type: string
+  in_library: boolean
+  has_pdf: boolean
+  pdf_embedded: boolean
+  source: 'library' | 'ads' | 'pdf'
+}
+
+export interface AISearchResponse {
+  query: string
+  results: SearchResultItem[]
+  ai_analysis?: AIAnalysis
+  total_count: number
+}
+
+export interface AskPaperResponse {
+  bibcode: string
+  question: string
+  answer: string
+  sources_used: string[]
+}
+
+// LaTeX types
+export interface EmptyCitationInfo {
+  index: number
+  cite_type: string
+  context: string
+  full_match: string
+  line_number: number
+  existing_keys: string[]
+}
+
+export interface ParseLaTeXResponse {
+  empty_citations: EmptyCitationInfo[]
+  total_count: number
+}
+
+export interface SuggestedPaper {
+  bibcode: string
+  title: string
+  year?: number
+  first_author?: string
+  authors?: string[]
+  abstract?: string
+  citation_count?: number
+  relevance_score: number
+  relevance_explanation: string
+  citation_type: string
+  bibtex?: string
+  bibitem_aastex?: string
+  in_library: boolean
+}
+
+export interface CitationAnalysis {
+  topic: string
+  claim: string
+  citation_type_needed: string
+  keywords: string[]
+  reasoning: string
+}
+
+export interface CitationSuggestion {
+  citation_index: number
+  cite_type: string
+  context: string
+  existing_keys: string[]
+  analysis?: CitationAnalysis
+  suggestions: SuggestedPaper[]
+  error?: string
+}
+
+export interface GetSuggestionsResponse {
+  suggestions: CitationSuggestion[]
+  total_citations: number
+}
+
+export interface BibliographyEntry {
+  bibcode: string
+  cite_key: string
+  entry: string
+  format: string
+}
+
+export interface GenerateBibliographyResponse {
+  entries: BibliographyEntry[]
+  combined: string
+}
+
 // API Client
 async function request<T>(
   path: string,
@@ -387,4 +493,50 @@ export const api = {
 
   testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
     request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`),
+
+  // AI-powered Search
+  aiSearch: (params: {
+    query: string
+    limit?: number
+    search_library?: boolean
+    search_ads?: boolean
+    search_pdf?: boolean
+    min_year?: number
+    min_citations?: number
+    use_llm?: boolean
+  }) =>
+    request<AISearchResponse>('/ai/search', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  askPaper: (bibcode: string, question: string) =>
+    request<AskPaperResponse>('/ai/ask', {
+      method: 'POST',
+      body: JSON.stringify({ bibcode, question }),
+    }),
+
+  // LaTeX parsing and citation suggestions
+  parseLaTeX: (latexText: string) =>
+    request<ParseLaTeXResponse>('/latex/parse', {
+      method: 'POST',
+      body: JSON.stringify({ latex_text: latexText }),
+    }),
+
+  getCitationSuggestions: (params: {
+    latex_text: string
+    limit?: number
+    use_library?: boolean
+    use_ads?: boolean
+  }) =>
+    request<GetSuggestionsResponse>('/latex/suggest', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  generateBibliography: (bibcodes: string[], format: 'bibtex' | 'aastex' = 'bibtex') =>
+    request<GenerateBibliographyResponse>('/latex/bibliography', {
+      method: 'POST',
+      body: JSON.stringify({ bibcodes, format }),
+    }),
 }

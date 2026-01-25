@@ -27,7 +27,9 @@ import { Paper, api } from '@/lib/api'
 import { formatAuthorList, cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/Icon'
 import { usePaperSelection } from '@/store'
-import { useToggleMyPaper, useDeletePaper } from '@/hooks/usePapers'
+import { useToggleMyPaper, useDeletePaper, useDownloadPdf, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
+import { useNote } from '@/hooks/useNotes'
+import { Loader2 } from 'lucide-react'
 
 interface PaperTableProps {
   data: Paper[]
@@ -45,11 +47,44 @@ function CitationSort({ sorted }: { sorted: boolean | undefined }) {
   return <ArrowUpDown size={14} className={cn(sorted && 'text-foreground')} />
 }
 
+// Note preview tooltip component
+function NotePreview({ bibcode }: { bibcode: string }) {
+  const [isHovered, setIsHovered] = useState(false)
+  const { data: note, isLoading } = useNote(bibcode)
+
+  return (
+    <div
+      className="relative inline-block"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <Icon icon={FileText} size={16} className="text-primary cursor-pointer" />
+      {isHovered && (
+        <div className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 w-64 max-h-48 overflow-auto bg-popover border rounded-lg shadow-lg p-3 text-sm">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Loading...
+            </div>
+          ) : note?.content ? (
+            <div className="whitespace-pre-wrap">{note.content}</div>
+          ) : (
+            <div className="text-muted-foreground italic">No note content</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PaperTable({ data, onRowClick }: PaperTableProps) {
   const navigate = useNavigate()
   const { isSelected, toggleSelection, selectAll, deselectAll } = usePaperSelection()
   const toggleMyPaper = useToggleMyPaper()
   const deletePaper = useDeletePaper()
+  const downloadPdf = useDownloadPdf()
+  const openPdf = useOpenPdf()
+  const embedPdf = useEmbedPdf()
 
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'updated_at', desc: true },
@@ -271,8 +306,27 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       id: 'is_my_paper',
       header: 'Mine',
       cell: (info) => {
-        const isMyPaper = info.row.original.is_my_paper
-        return isMyPaper ? <Icon icon={Star} size={16} className="text-yellow-500" /> : '-'
+        const paper = info.row.original
+        const isMyPaper = paper.is_my_paper
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleMyPaper.mutate({ bibcode: paper.bibcode, isMyPaper: !isMyPaper })
+            }}
+            className="hover:scale-110 transition-transform"
+            title={isMyPaper ? 'Unmark as my paper' : 'Mark as my paper'}
+          >
+            <Icon
+              icon={Star}
+              size={16}
+              className={cn(
+                'transition-colors',
+                isMyPaper ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground hover:text-yellow-500'
+              )}
+            />
+          </button>
+        )
       },
       size: 40,
     },
@@ -280,8 +334,9 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       id: 'has_note',
       header: 'Note',
       cell: (info) => {
-        const hasNote = info.row.original.has_note
-        return hasNote ? <Icon icon={FileText} size={16} className="text-primary" /> : '-'
+        const paper = info.row.original
+        if (!paper.has_note) return <span className="text-muted-foreground">-</span>
+        return <NotePreview bibcode={paper.bibcode} />
       },
       size: 40,
     },
@@ -289,13 +344,49 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       id: 'pdf_status',
       header: 'PDF',
       cell: (info) => {
-        const { pdf_path, pdf_url } = info.row.original
+        const paper = info.row.original
+        const { pdf_path, pdf_url } = paper
+
         if (pdf_path) {
-          return <Icon icon={Check} size={16} className="text-green-500" />
+          // Has local PDF - click to open
+          return (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openPdf.mutate(paper.bibcode)
+              }}
+              className="hover:scale-110 transition-transform"
+              title="Open PDF"
+            >
+              <Icon icon={Check} size={16} className="text-green-500 hover:text-green-600" />
+            </button>
+          )
         } else if (pdf_url) {
-          return <Icon icon={Download} size={16} className="text-muted-foreground" />
+          // Has URL but not downloaded - click to download
+          return (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                downloadPdf.mutate(paper.bibcode)
+              }}
+              className="hover:scale-110 transition-transform"
+              title="Download PDF"
+              disabled={downloadPdf.isPending}
+            >
+              {downloadPdf.isPending ? (
+                <Loader2 size={16} className="animate-spin text-muted-foreground" />
+              ) : (
+                <Icon icon={Download} size={16} className="text-muted-foreground hover:text-primary" />
+              )}
+            </button>
+          )
         }
-        return <Icon icon={File} size={16} className="text-muted-foreground opacity-50" />
+        // No PDF available
+        return (
+          <span title="No PDF available">
+            <Icon icon={File} size={16} className="text-muted-foreground opacity-50" />
+          </span>
+        )
       },
       size: 40,
     },
@@ -303,8 +394,40 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       id: 'embedded',
       header: 'Embed',
       cell: (info) => {
-        const pdf_embedded = info.row.original.pdf_embedded
-        return pdf_embedded ? <Icon icon={Check} size={16} className="text-green-500" /> : '-'
+        const paper = info.row.original
+        const { pdf_embedded, pdf_path } = paper
+
+        if (pdf_embedded) {
+          return (
+            <span title="PDF embedded">
+              <Icon icon={Check} size={16} className="text-green-500" />
+            </span>
+          )
+        }
+
+        if (pdf_path) {
+          // Has PDF but not embedded - click to embed
+          return (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                embedPdf.mutate(paper.bibcode)
+              }}
+              className="hover:scale-110 transition-transform"
+              title="Embed PDF for search"
+              disabled={embedPdf.isPending}
+            >
+              {embedPdf.isPending ? (
+                <Loader2 size={16} className="animate-spin text-muted-foreground" />
+              ) : (
+                <Icon icon={BookOpen} size={16} className="text-muted-foreground hover:text-primary" />
+              )}
+            </button>
+          )
+        }
+
+        // No PDF to embed
+        return <span className="text-muted-foreground">-</span>
       },
       size: 40,
     },

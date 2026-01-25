@@ -11,6 +11,9 @@ import {
   Pencil,
   Trash2,
   Check,
+  Sparkles,
+  Send,
+  Loader2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
@@ -20,6 +23,7 @@ import { Icon } from '@/components/ui/Icon'
 import { Modal } from '@/components/ui/Modal'
 import { usePaper, useToggleMyPaper, useDeletePaper } from '@/hooks/usePapers'
 import { useNote, useCreateOrUpdateNote, useDeleteNote } from '@/hooks/useNotes'
+import { useAskPaper } from '@/hooks/useSearch'
 import { formatAuthorList } from '@/lib/utils'
 import { api } from '@/lib/api'
 
@@ -37,6 +41,10 @@ export function PaperDetailPage() {
   const [noteContent, setNoteContent] = useState('')
   const [copiedBibtex, setCopiedBibtex] = useState(false)
   const [copiedCiteKey, setCopiedCiteKey] = useState(false)
+  const [aiQuestion, setAiQuestion] = useState('')
+  const [aiAnswer, setAiAnswer] = useState<{ answer: string; sources: string[] } | null>(null)
+
+  const askPaper = useAskPaper()
 
   const handleCopyBibtex = async () => {
     if (paper?.bibtex) {
@@ -95,6 +103,26 @@ export function PaperDetailPage() {
       await api.openPdf(bibcode)
     } catch (e) {
       console.error('Failed to open PDF:', e)
+    }
+  }
+
+  const handleAskQuestion = async () => {
+    if (!aiQuestion.trim()) return
+
+    askPaper.mutate(
+      { bibcode, question: aiQuestion },
+      {
+        onSuccess: (data) => {
+          setAiAnswer({ answer: data.answer, sources: data.sources_used })
+        },
+      }
+    )
+  }
+
+  const handleKeyDownAI = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleAskQuestion()
     }
   }
 
@@ -289,6 +317,67 @@ export function PaperDetailPage() {
             ) : (
               <p className="text-sm text-muted-foreground">No note yet. Add one to remember key points.</p>
             )}
+          </Card>
+
+          {/* AI Q&A */}
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Icon icon={Sparkles} size={18} className="text-primary" />
+              <h3 className="font-medium">Ask AI About This Paper</h3>
+              {paper.pdf_embedded && (
+                <Badge variant="secondary" className="ml-auto text-xs">PDF indexed</Badge>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={aiQuestion}
+                  onChange={(e) => setAiQuestion(e.target.value)}
+                  onKeyDown={handleKeyDownAI}
+                  placeholder="What is the main methodology used in this paper?"
+                  className="flex-1 h-10 px-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <Button
+                  onClick={handleAskQuestion}
+                  disabled={askPaper.isPending || !aiQuestion.trim()}
+                >
+                  {askPaper.isPending ? (
+                    <Icon icon={Loader2} size={16} className="animate-spin" />
+                  ) : (
+                    <Icon icon={Send} size={16} />
+                  )}
+                </Button>
+              </div>
+
+              {aiAnswer && (
+                <div className="p-4 bg-secondary/50 rounded-lg">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{aiAnswer.answer}</p>
+                  {aiAnswer.sources.length > 0 && (
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-border/50">
+                      <span className="text-xs text-muted-foreground">Sources:</span>
+                      {aiAnswer.sources.map((source) => (
+                        <Badge key={source} variant="outline" className="text-xs">
+                          {source}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {askPaper.isError && (
+                <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded text-sm">
+                  Failed to get answer. Make sure an LLM API key is configured.
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                {paper.pdf_embedded
+                  ? 'AI uses the paper abstract and PDF content to answer questions.'
+                  : 'AI uses the paper abstract to answer. Embed the PDF for more detailed answers.'}
+              </p>
+            </div>
           </Card>
         </div>
       </div>

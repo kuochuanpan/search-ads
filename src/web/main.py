@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.web.routers import papers, projects, citations, notes, search, import_, pdf, settings
+from src.web.routers import papers, projects, citations, notes, search, import_, pdf, settings, ai, latex
 
 app = FastAPI(
     title="Search-ADS API",
@@ -34,6 +34,8 @@ app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(import_.router, prefix="/api/import", tags=["Import"])
 app.include_router(pdf.router, prefix="/api/pdf", tags=["PDF"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+app.include_router(latex.router, prefix="/api/latex", tags=["LaTeX"])
 
 
 @app.get("/")

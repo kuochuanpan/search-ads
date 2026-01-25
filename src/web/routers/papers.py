@@ -28,6 +28,7 @@ async def list_papers(
     has_pdf: Optional[bool] = Query(default=None),
     pdf_embedded: Optional[bool] = Query(default=None),
     is_my_paper: Optional[bool] = Query(default=None),
+    has_note: Optional[bool] = Query(default=None),
     search: Optional[str] = Query(default=None),
     sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at"] = Query(default="created_at"),
     sort_order: Literal["asc", "desc"] = Query(default="desc"),
@@ -56,6 +57,9 @@ async def list_papers(
 
     if is_my_paper is not None:
         papers = [p for p in papers if p.is_my_paper == is_my_paper]
+
+    if has_note is not None:
+        papers = [p for p in papers if (note_repo.get(p.bibcode) is not None) == has_note]
 
     if search:
         search_lower = search.lower()
@@ -90,12 +94,12 @@ async def list_papers(
     for paper in papers:
         # Check if paper has a note
         note = note_repo.get(paper.bibcode)
-        has_note = note is not None
+        paper_has_note = note is not None
 
         # Get projects for this paper
         projects = project_repo.get_paper_projects(paper.bibcode)
 
-        paper_reads.append(PaperRead.from_db_model(paper, has_note=has_note, projects=projects))
+        paper_reads.append(PaperRead.from_db_model(paper, has_note=paper_has_note, projects=projects))
 
     return PaperListResponse(
         papers=paper_reads,
