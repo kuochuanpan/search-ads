@@ -218,9 +218,11 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Optional - Alternative LLM backend (preferred when available)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# Optional - Auto-detect your papers by author name
-MY_AUTHOR_NAMES="LastName, FirstInitial.,LastName, Full Name"
+# Optional - Auto-detect your papers by author name (semicolon-separated)
+MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 ```
+
+**Tip**: You can also edit your author names in the Web UI by clicking the user icon in the top right corner.
 
 Get your API keys:
 
@@ -449,6 +451,7 @@ By default, data is stored in `~/.search-ads/`:
 | `expand <bibcode>` | Expand citation graph |
 | `status` | Show database and API usage stats |
 | `list-papers` | List papers in database |
+| `mine` | Mark/unmark/list your own papers |
 | `import` | Import from BibTeX file |
 | `db embed` | Embed papers for semantic search |
 | `db update` | Update citation counts |

@@ -42,6 +42,14 @@ class SettingsResponse(BaseModel):
     has_openai_key: bool
     has_anthropic_key: bool
 
+    # Author names for "my papers" detection
+    my_author_names: str
+
+
+class AuthorNamesRequest(BaseModel):
+    """Request to update author names."""
+    author_names: str
+
 
 @router.get("/", response_model=SettingsResponse)
 async def get_settings():
@@ -59,7 +67,33 @@ async def get_settings():
         has_ads_key=bool(settings.ads_api_key),
         has_openai_key=bool(settings.openai_api_key),
         has_anthropic_key=bool(settings.anthropic_api_key),
+        my_author_names=settings.my_author_names,
     )
+
+
+@router.get("/author-names")
+async def get_author_names():
+    """Get configured author names for 'my papers' detection."""
+    return {
+        "author_names": settings.my_author_names,
+        "parsed_names": settings.get_my_author_names(),
+    }
+
+
+@router.put("/author-names", response_model=MessageResponse)
+async def update_author_names(request: AuthorNamesRequest):
+    """Update author names for 'my papers' detection.
+
+    Names should be semicolon-separated, e.g., "Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
+    """
+    try:
+        settings.save_my_author_names(request.author_names)
+        return MessageResponse(
+            message=f"Author names updated successfully",
+            success=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save author names: {str(e)}")
 
 
 @router.get("/stats", response_model=StatsResponse)

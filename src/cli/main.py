@@ -55,8 +55,8 @@ OPENAI_API_KEY=
 # Get your key from: https://console.anthropic.com/
 #ANTHROPIC_API_KEY=
 
-# Author name(s) for auto-detecting "my papers" (comma-separated, optional)
-# Example: MY_AUTHOR_NAMES="Pan, K.,Pan, Kuo-Chuan"
+# Author name(s) for auto-detecting "my papers" (semicolon-separated, optional)
+# Example: MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 #MY_AUTHOR_NAMES=
 """
 
@@ -1536,8 +1536,10 @@ def mine(
     List all your papers:
         search-ads mine --list
 
-    Configure auto-detection by setting MY_AUTHOR_NAMES environment variable:
-        export MY_AUTHOR_NAMES="Pan, K.,Pan, Ke-Jung"
+    Configure auto-detection by setting MY_AUTHOR_NAMES in ~/.search-ads/.env:
+        MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
+
+    Or use the Web UI: click the user icon in the top right to edit author names.
     """
     ensure_data_dirs()
 

@@ -81,6 +81,12 @@ export interface SettingsResponse {
   has_ads_key: boolean
   has_openai_key: boolean
   has_anthropic_key: boolean
+  my_author_names: string
+}
+
+export interface AuthorNamesResponse {
+  author_names: string
+  parsed_names: string[]
 }
 
 // AI Search types
@@ -493,6 +499,14 @@ export const api = {
 
   testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
     request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`),
+
+  getAuthorNames: () => request<AuthorNamesResponse>('/settings/author-names'),
+
+  updateAuthorNames: (authorNames: string) =>
+    request<{ message: string; success: boolean }>('/settings/author-names', {
+      method: 'PUT',
+      body: JSON.stringify({ author_names: authorNames }),
+    }),
 
   // AI-powered Search
   aiSearch: (params: {
