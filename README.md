@@ -135,10 +135,10 @@ The backend dependencies are already included when you install search-ads. No ad
 
 ```bash
 # From the project root directory
-uvicorn src.web.main:app --reload --port 8000
+uvicorn src.web.main:app --reload --port 9527
 ```
 
-The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs`.
+The API will be available at `http://localhost:9527` with interactive docs at `http://localhost:9527/docs`.
 
 #### Frontend Setup
 
@@ -161,7 +161,7 @@ For development, run both servers simultaneously in separate terminals:
 
 ```bash
 # Terminal 1 - Backend
-uvicorn src.web.main:app --reload --port 8000
+uvicorn src.web.main:app --reload --port 9527
 
 # Terminal 2 - Frontend
 cd frontend && npm run dev
@@ -482,7 +482,7 @@ The Web UI provides a graphical interface for managing your paper library. See [
 
 ### API Endpoints
 
-The backend exposes a RESTful API at `http://localhost:8000/api/`:
+The backend exposes a RESTful API at `http://localhost:9527/api/`:
 
 | Endpoint | Description |
 | -------- | ----------- |
@@ -494,7 +494,7 @@ The backend exposes a RESTful API at `http://localhost:8000/api/`:
 | `/api/import` | Import from various sources |
 | `/api/settings` | Configuration management |
 
-Interactive API documentation is available at `http://localhost:8000/docs`.
+Interactive API documentation is available at `http://localhost:9527/docs`.
 
 ## License
 
