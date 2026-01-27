@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Plus, Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
@@ -13,19 +13,34 @@ import { useStats } from '@/hooks/useStats'
 
 export function LibraryPage() {
   const navigate = useNavigate()
+  const searchParams = useSearch({ strict: false })
   const { project } = useActiveProject()
   const { count: selectedCount, selectedBibcodes } = usePaperSelection()
 
   const [filters, setFilters] = useState<LibraryFiltersState>({
-    search: '',
-    year_min: undefined,
-    year_max: undefined,
-    min_citations: undefined,
-    has_pdf: undefined,
-    pdf_embedded: undefined,
-    is_my_paper: undefined,
-    has_note: undefined,
+    search: (searchParams as any).search || '',
+    year_min: (searchParams as any).year_min ? Number((searchParams as any).year_min) : undefined,
+    year_max: (searchParams as any).year_max ? Number((searchParams as any).year_max) : undefined,
+    min_citations: (searchParams as any).min_citations ? Number((searchParams as any).min_citations) : undefined,
+    has_pdf: (searchParams as any).has_pdf ? (searchParams as any).has_pdf === 'true' || (searchParams as any).has_pdf === true : undefined,
+    pdf_embedded: (searchParams as any).pdf_embedded ? (searchParams as any).pdf_embedded === 'true' || (searchParams as any).pdf_embedded === true : undefined,
+    is_my_paper: (searchParams as any).is_my_paper ? (searchParams as any).is_my_paper === 'true' || (searchParams as any).is_my_paper === true : undefined,
+    has_note: (searchParams as any).has_note ? (searchParams as any).has_note === 'true' || (searchParams as any).has_note === true : undefined,
   })
+
+  // Update filters when search params change (e.g. navigation from sidebar or home)
+  useEffect(() => {
+    // Only update if search params are present to process (basic sync)
+    // We prioritize URL state for these specific navigation filters
+    if (Object.keys(searchParams).length > 0) {
+      setFilters(prev => ({
+        ...prev,
+        search: (searchParams as any).search || '',
+        is_my_paper: (searchParams as any).is_my_paper ? ((searchParams as any).is_my_paper === 'true' || (searchParams as any).is_my_paper === true) : undefined,
+        has_note: (searchParams as any).has_note ? ((searchParams as any).has_note === 'true' || (searchParams as any).has_note === true) : undefined,
+      }))
+    }
+  }, [searchParams])
 
   const [sorting, setSorting] = useState<{ id: string; desc: boolean }[]>([
     { id: 'added_date', desc: true },
@@ -39,7 +54,7 @@ export function LibraryPage() {
   // Memoize params to ensure we don't trigger any react-query overhead while typing search
   const queryParams = useMemo(() => ({
     project: project || undefined,
-    // search: filters.search || undefined, // Disabled server-side search
+    search: filters.search || undefined, // Enabled server-side search
     year_min: filters.year_min,
     year_max: filters.year_max,
     min_citations: filters.min_citations,
@@ -51,6 +66,7 @@ export function LibraryPage() {
     sort_order: sortOrder as 'asc' | 'desc',
   }), [
     project,
+    filters.search,
     filters.year_min,
     filters.year_max,
     filters.min_citations,
@@ -64,45 +80,39 @@ export function LibraryPage() {
 
   const { data: stats } = useStats()
 
-  const { data, isLoading, error } = usePapers(queryParams)
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = usePapers(queryParams)
 
-  // Client-side filtering
-  const filteredPapers = useMemo(() => {
-    if (!data?.papers) return []
-    if (!filters.search) return data.papers
+  // Flatten pages into a single array
+  const papers = useMemo(() => {
+    return data?.pages?.flatMap(page => page?.papers || []) ?? []
+  }, [data])
 
-    const query = filters.search.toLowerCase()
+  // Infinite scroll observer
+  const loadMoreRef = useRef<HTMLDivElement>(null)
 
-    const result = data.papers.filter((paper) => {
-      // Search by title
-      if (paper.title?.toLowerCase().includes(query)) return true
-
-      // Search by bibcode
-      if (paper.bibcode.toLowerCase().includes(query)) return true
-
-      // Search by abstract
-      if (paper.abstract?.toLowerCase().includes(query)) return true
-
-      // Search by authors
-      if (paper.authors) {
-        try {
-          const authorsList = Array.isArray(paper.authors) ? paper.authors : [paper.authors]
-          // Join with space to match partial names
-          const authorsStr = authorsList.join(' ').toLowerCase()
-          if (authorsStr.includes(query)) return true
-        } catch {
-          // ignore error
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
         }
-      }
+      },
+      { threshold: 0.1 }
+    )
 
-      // Search by year
-      if (paper.year?.toString().includes(query)) return true
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current)
+    }
 
-      return false
-    })
-
-    return result
-  }, [data?.papers, filters.search])
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const handleRowClick = useCallback((paper: Paper) => {
     navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })
@@ -115,9 +125,9 @@ export function LibraryPage() {
         <div>
           <h1 className="text-2xl font-semibold">Library</h1>
           <p className="text-muted-foreground">
-            {filteredPapers.length} papers
+            {papers.length} papers
             {project && ` in ${project}`}
-            {data?.total !== filteredPapers.length && ` (filtered from ${data?.total})`}
+            {data?.pages?.[0]?.total !== undefined && ` (filtered from ${data.pages[0].total})`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -159,13 +169,19 @@ export function LibraryPage() {
       )}
 
       {/* Table */}
-      {!isLoading && !error && data && (
-        <PaperTable
-          data={filteredPapers}
-          onRowClick={handleRowClick}
-          sorting={sorting}
-          onSortingChange={setSorting}
-        />
+      {!isLoading && !error && (
+        <>
+          <PaperTable
+            data={papers}
+            onRowClick={handleRowClick}
+            sorting={sorting}
+            onSortingChange={setSorting}
+          />
+          {/* Load More Trigger */}
+          <div ref={loadMoreRef} className="h-4 w-full flex items-center justify-center p-4">
+            {isFetchingNextPage && <div className="text-muted-foreground text-sm">Loading more...</div>}
+          </div>
+        </>
       )}
     </div>
   )

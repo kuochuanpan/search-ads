@@ -66,7 +66,7 @@ export function HomePage() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card className="p-4 cursor-pointer hover:border-primary/50 transition-colors" onClick={() => navigate({ to: '/library', search: { has_note: true } as any })}>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
               <Icon icon={FileText} size={24} className="text-green-600 dark:text-green-400" />
@@ -96,23 +96,24 @@ export function HomePage() {
             </button>
           </div>
           <div className="space-y-2">
-            {recentPapers?.papers.length === 0 && (
+            {recentPapers?.pages?.[0]?.papers.length ? (
+              recentPapers.pages[0].papers.slice(0, 5).map((paper) => (
+                <div
+                  key={paper.bibcode}
+                  className="p-2 rounded hover:bg-secondary/50 cursor-pointer transition-colors"
+                  onClick={() => navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })}
+                >
+                  <p className="text-sm font-medium truncate">{paper.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {paper.first_author || paper.authors?.[0]} · {paper.year}
+                  </p>
+                </div>
+              ))
+            ) : (
               <p className="text-muted-foreground text-sm py-4 text-center">
                 No papers yet. Import some papers to get started.
               </p>
             )}
-            {recentPapers?.papers.map((paper) => (
-              <div
-                key={paper.bibcode}
-                className="p-2 rounded hover:bg-secondary/50 cursor-pointer transition-colors"
-                onClick={() => navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })}
-              >
-                <p className="text-sm font-medium truncate">{paper.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {paper.first_author || paper.authors?.[0]} · {paper.year}
-                </p>
-              </div>
-            ))}
           </div>
         </Card>
 
@@ -131,32 +132,33 @@ export function HomePage() {
             </button>
           </div>
           <div className="space-y-2">
-            {myPapers?.papers.length === 0 && (
+            {myPapers?.pages?.[0]?.papers.length ? (
+              myPapers.pages[0].papers.slice(0, 5).map((paper) => (
+                <div
+                  key={paper.bibcode}
+                  className="p-2 rounded hover:bg-secondary/50 cursor-pointer transition-colors"
+                  onClick={() => navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })}
+                >
+                  <p className="text-sm font-medium truncate">{paper.title}</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <span>{paper.year}</span>
+                    {paper.citation_count !== undefined && (
+                      <>
+                        <span>·</span>
+                        <span className="flex items-center gap-1">
+                          <Icon icon={TrendingUp} size={12} />
+                          {paper.citation_count} citations
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              ))
+            ) : (
               <p className="text-muted-foreground text-sm py-4 text-center">
                 Mark papers as yours to see them here.
               </p>
             )}
-            {myPapers?.papers.map((paper) => (
-              <div
-                key={paper.bibcode}
-                className="p-2 rounded hover:bg-secondary/50 cursor-pointer transition-colors"
-                onClick={() => navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })}
-              >
-                <p className="text-sm font-medium truncate">{paper.title}</p>
-                <p className="text-xs text-muted-foreground flex items-center gap-2">
-                  <span>{paper.year}</span>
-                  {paper.citation_count !== undefined && (
-                    <>
-                      <span>·</span>
-                      <span className="flex items-center gap-1">
-                        <Icon icon={TrendingUp} size={12} />
-                        {paper.citation_count} citations
-                      </span>
-                    </>
-                  )}
-                </p>
-              </div>
-            ))}
           </div>
         </Card>
       </div>

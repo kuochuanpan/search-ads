@@ -88,7 +88,7 @@ function NotePreview({ bibcode }: { bibcode: string }) {
 }
 
 export function PaperTable(props: PaperTableProps) {
-  const { data, onRowClick } = props
+  const { data = [], onRowClick } = props
   const navigate = useNavigate()
   const { isSelected, toggleSelection, selectAll, deselectAll } = usePaperSelection()
   const toggleMyPaper = useToggleMyPaper()

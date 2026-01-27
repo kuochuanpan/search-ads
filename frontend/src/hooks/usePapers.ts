@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export function usePapers(params?: {
@@ -16,9 +16,15 @@ export function usePapers(params?: {
   sort_by?: 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | 'authors' | 'journal'
   sort_order?: 'asc' | 'desc'
 }) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['papers', params],
-    queryFn: () => api.getPapers(params),
+    queryFn: ({ pageParam }) => api.getPapers({ ...params, offset: pageParam, limit: params?.limit || 100 }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const nextOffset = lastPage.offset + lastPage.limit
+      if (nextOffset >= lastPage.total) return undefined
+      return nextOffset
+    },
   })
 }
 

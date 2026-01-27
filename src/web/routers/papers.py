@@ -71,6 +71,8 @@ async def list_papers(
             if search_lower in (p.title or "").lower()
             or search_lower in (p.abstract or "").lower()
             or search_lower in (p.authors or "").lower()
+            or search_lower in (p.bibcode or "").lower()
+            or search_lower == str(p.year or "")
         ]
 
     # Sorting
