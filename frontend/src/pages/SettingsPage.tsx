@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTheme } from '@/components/ThemeProvider'
 import { Check, AlertCircle, RefreshCw, Trash2, Database, Key, Palette, BookOpen, User, Save, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -8,6 +9,8 @@ import { api } from '@/lib/api'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 export function SettingsPage() {
+  const { theme, setTheme } = useTheme()
+
   const { data: stats } = useStats()
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -118,9 +121,27 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Choose your preferred color scheme</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">System</Button>
-              <Button variant="outline" size="sm">Light</Button>
-              <Button variant="outline" size="sm">Dark</Button>
+              <Button
+                variant={theme === 'system' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTheme('system')}
+              >
+                System
+              </Button>
+              <Button
+                variant={theme === 'light' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTheme('light')}
+              >
+                Light
+              </Button>
+              <Button
+                variant={theme === 'dark' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTheme('dark')}
+              >
+                Dark
+              </Button>
             </div>
           </div>
         </div>
