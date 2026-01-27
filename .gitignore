@@ -39,3 +39,7 @@ htmlcov/
 # Build
 dist/
 build/
+
+# Node
+node_modules/
+package-lock.json

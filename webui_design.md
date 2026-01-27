@@ -79,7 +79,28 @@ The web UI uses a **persistent sidebar navigation** with React Router for client
 
 ## Core Features
 
+### 0. Onboarding & Setup
+
+The first run experience determines user retention. The app handles setup gracefully.
+
+**Zero State / Setup Wizard:**
+
+1.  **Welcome Screen**: Brief intro to the tool.
+2.  **API Key Setup**: Prompt for ADS and optional LLM keys.
+3.  **Identity Setup**: "What are your name variations?" (Critical for "My Papers" feature).
+    *   *Input*: `Pan, K.-C.; Pan, Kuo-Chuan`
+4.  **Initial Seed**:
+    *   Option A: "Import from BibTeX" (drag & drop)
+    *   Option B: "Key Papers" (enter 1-3 bibcodes to start graph)
+    *   Option C: "Start Empty"
+
+**Empty States:**
+*   **Library**: "Your library is empty. Try searching for a topic or importing a bibcode."
+*   **Search**: "Enter a query to find papers."
+*   **Graph**: "Add papers to your library to see connections."
+
 ### 1. Smart Library Dashboard
+
 
 The home view shows your research at a glance with intelligent summaries.
 
@@ -583,6 +604,7 @@ PDFs open in your system's default viewer (Preview on macOS, Adobe Reader, etc.)
 - **Familiar interface**: Users know their PDF reader
 - **No development cost**: Focus engineering effort elsewhere
 - **Annotations persist**: Stored in the PDF file itself
+- **Technical Note**: "Open" triggers an API call (`/api/pdf/open`) which launches the system viewer process on the host machine. It does NOT try to open `file://` links in the browser.
 
 **Features:**
 
@@ -849,6 +871,11 @@ Flexible ways to get papers into your library.
 │  Default Project:    [None ▾]                                               │
 │  PDF Storage:        ~/.search-ads/pdfs/  [Change]                          │
 │                                                                             │
+│  User Profile & Identity                                                    │
+│  ───────────────────────────────────────────────────────────────────────    │
+│  My Author Names:    [Pan, K.-C.; Pan, Kuo-Chuan]                           │
+│  (Used to automatically tag "My Papers" in the library)                     │
+│                                                                             │
 │  API Keys                                                                   │
 │  ───────────────────────────────────────────────────────────────────────    │
 │  ADS API Key:        [••••••••••••••••••••] [Show] [Test]                   │
@@ -898,6 +925,20 @@ Flexible ways to get papers into your library.
 │                                                                             │
 └──────────────────────────────────────────────────────────────────────────���──┘
 ```
+
+### 11.1 Integration Notes: User Panel vs. Settings
+
+*   **Current Architecture**:
+    *   **User Icon**: Opens a quick-access panel (currently holds Author Names).
+    *   **Settings Page**: Holds global config (API keys, theme).
+*   **Integration Plan**:
+    *   **Consolidation**: Move the "Author Names" input to the **Settings Page** (under "Identity") as the source of truth.
+    *   **User Panel**: Redesign the top-right User Icon to be a **Navigational Menu**:
+        *   `Profile Settings` -> Navigates to `/settings`
+        *   `API Keys` -> Navigates to `/settings`
+        *   (Future) `Sign Out`
+    *   This removes the conflict where "User Info" is isolated from "App Settings" and unifies identity management.
+
 
 ---
 
@@ -960,7 +1001,9 @@ Power users should be able to do everything without touching the mouse.
 │  API Structure:                                                             │
 │  ├── /api/papers/          - CRUD for papers                                │
 │  │   ├── PATCH /{bibcode}/mine  - Toggle "my paper" status                  │
-│  │   └── GET /mine         - List all papers marked as mine                 │
+│  │   ├── GET /mine         - List all papers marked as mine                 │
+│  │   ├── GET /{bibcode}/references - Get references (paginated, from ADS)   │
+│  │   └── GET /{bibcode}/citations  - Get citations (paginated, 100/page)    │
 │  ├── /api/notes/           - Note management                                │
 │  │   ├── GET /{bibcode}    - Get note for a paper                           │
 │  │   ├── PUT /{bibcode}    - Create/update note for a paper                 │
@@ -1019,21 +1062,43 @@ Power users should be able to do everything without touching the mouse.
 
 ---
 
+## Error Handling & System Feedback
+
+1.  **Transient Errors** (Network glitches, copy failed):
+    *   **UI**: Toast notification (bottom right). Auto-dismiss after 3s.
+    *   *Example*: "Failed to copy citation to clipboard."
+
+2.  **Persistent Errors** (API Key missing, Rate limited):
+    *   **UI**: Dismissible alert banner at top of view.
+    *   *Example*: "ADS API Key is missing. [Go to Settings]"
+
+3.  **Async/Long-Running Ops** (Embedding 1000 papers, Batch Import):
+    *   **UI**: Global status indicator (spinner/progress bar) in header or sidebar bottom.
+    *   *Detail*: "Embedding papers: 45/120..."
+
+---
+
 ## Implementation Phases
 
 ### Phase 4.1: Foundation
 **Goal**: Basic paper browsing, management, and API backend
 
-- [ ] FastAPI backend with all API routes (papers, projects, search, import, pdf, settings)
+- [ ] FastAPI backend with all API routes (papers, projects, search, import, pdf, notes, settings)
 - [ ] React frontend with TanStack Router (sidebar navigation)
-- [ ] Library view with TanStack Table (all columns: checkbox, title, year, authors, citations, PDF, embedded, status)
-- [ ] Column sorting, filtering, visibility toggle
-- [ ] Right-click context menu (view, find refs/citations, download, copy)
-- [ ] Bulk actions for selected papers
-- [ ] Paper detail view with metadata and actions
+- [ ] Library view with TanStack Table (all columns: checkbox, title, year, authors, citations, mine, note, PDF, embedded)
+- [ ] Column sorting, filtering (including "My Papers" and "Has Note" filters), visibility toggle
+- [ ] Expandable rows with abstract inline (click row to expand)
+- [ ] Hover preview for abstract tooltip
+- [ ] Right-click context menu (view, find refs/citations, mark as mine, add/edit note, download, copy)
+- [ ] Bulk actions for selected papers (including "Mark as My Papers")
+- [ ] Paper detail view with metadata, actions, and "My Paper" toggle
+- [ ] Note Editor Modal (add/edit/delete notes with markdown support)
+- [ ] Note preview on hover in Library view
 - [ ] Project dropdown in header with CRUD operations
+- [ ] **Onboarding Flow**: Welcome screen, API Key entry, "My Author Names" setup
+- [ ] **Settings Page**: Manage "My Author Names", API Keys, Defaults
 
-**Deliverable**: Functional paper library browser with full table features
+**Deliverable**: Functional paper library browser with full table features, notes, and "my papers" tracking
 
 ### Phase 4.2: Search & Discovery
 **Goal**: AI-powered search with library integration
@@ -1047,8 +1112,59 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Writing Assistant panel (paste LaTeX text, get suggestions)
 - [ ] BibTeX / AASTeX bibitem output format toggle
 - [ ] Copy to clipboard functionality
+- [ ] AI Q&A about paper (ask questions using embedded PDF text)
 
 **Deliverable**: Smart search, discovery, and writing assistant features
+
+### Phase 4.2.5: Bug Fixes & References/Citations Feature
+**Goal**: Fix critical bugs and add references/citations viewing functionality
+
+**New CLI Commands:**
+- [ ] `search-ads show <bibcode> --refs` - Get full references of a paper (with `--fetch` if not in library). Uses ADS API.
+- [ ] `search-ads show <bibcode> --citations` - Get citations of a paper (with `--fetch` if not in library, `--limit` to set max number, default=100). Uses ADS API with pagination for large citation counts.
+
+**Backend API:**
+- [ ] `GET /api/papers/{bibcode}/references` - Fetch references from ADS (paginated)
+- [ ] `GET /api/papers/{bibcode}/citations` - Fetch citations from ADS (paginated, 100 per page)
+
+**Frontend - References/Citations View:**
+- [ ] "Find References" and "Find Citations" in right-click context menu (Library view)
+- [ ] References/Citations results view (similar to search results but ADS-only)
+- [ ] Pagination support for citations > 100 (100 papers per page with "Next Page" button)
+- [ ] Quick add to library from results
+
+**Bug Fixes - Copy Functionality:**
+- [ ] Fix "Copy BibTeX" button in Paper Detail view (currently not clickable)
+- [ ] Fix "Copy AASTeX" button in Paper Detail view (currently not clickable)
+- [ ] Add "Copy AASTeX" option to right-click context menu in Library view
+- [ ] Fix "Copy BibTeX" button in right-click context menu in Library view
+- [ ] Add "Copy AASTeX" button to each paper in search results
+
+**Bug Fixes - Library View Sorting & Filtering:**
+- [ ] Fix sort order toggling: should only have ascending/descending (remove third "random" state)
+- [ ] Fix paper order preservation when toggling "Mine" filter (order should not change unless sorting method changes)
+- [ ] Fix view refresh after import or project changes (state not updating on view switch)
+
+**Bug Fixes - Home View:**
+- [ ] Fix "My Papers" panel click - should navigate to Library view with "My Papers" filter applied
+
+**Bug Fixes - Search:**
+- [ ] Include notes in "natural language" and "keyword" search
+- [ ] Add higher weighting for "mine" papers and note matches in LLM-powered search
+
+**Bug Fixes - PDF Management:**
+- [ ] Change Download button text to "Open PDF" (if downloaded) or "PDF not available" (if unavailable)
+- [ ] Implement "Open PDF" to open with system viewer (Preview on macOS) if possible, else open in new browser tab
+- [ ] Fix PDF embedding in Library view (bulk action not working)
+- [ ] Fix PDF embedding in Paper Detail view (button not working)
+
+**Bug Fixes - Data Cleanup:**
+- [ ] When deleting a paper: also delete associated PDF file from `~/.search-ads/pdfs/`
+- [ ] When deleting a paper: also delete associated note from database
+- [ ] When deleting a paper: also remove vector embeddings from ChromaDB
+- [ ] When running `search-ads db clear`: clean up all PDFs, notes, and vector embeddings
+
+**Deliverable**: Stable application with working copy buttons, proper sorting, and references/citations exploration
 
 ### Phase 4.3: Knowledge Graph
 **Goal**: Visual citation network exploration
@@ -1064,8 +1180,11 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Multiple layout options (force-directed, hierarchical)
 - [ ] Graph filtering (year, project, citation count)
 - [ ] Export as PNG/SVG image
+- [ ] Citation Network preview in Paper Detail view
+- [ ] Related Papers section in Paper Detail view (semantic similarity suggestions)
+- [ ] AI Summary generation for Paper Detail view
 
-**Deliverable**: Fully interactive citation network visualization
+**Deliverable**: Fully interactive citation network visualization with paper detail integration
 
 ### Phase 4.4: Import & Settings
 **Goal**: Data import and configuration management
@@ -1084,7 +1203,13 @@ Power users should be able to do everything without touching the mouse.
 
 - [ ] Keyboard shortcuts (⌘K search, j/k navigation, etc.)
 - [ ] Dark mode toggle
-- [ ] Dashboard view with stats, recent papers, recommendations
+- [ ] Dashboard view with:
+  - [ ] Research stats (papers this year, my papers count, papers with notes)
+  - [ ] Recent Papers card
+  - [ ] My Papers card (papers user authored with citation counts)
+  - [ ] Recent Notes card
+  - [ ] AI Recommendations card ("Papers you might need")
+  - [ ] Knowledge Graph Preview widget
 - [ ] Performance optimization (virtualized lists, lazy loading)
 - [ ] Error handling and user feedback (toasts, modals)
 - [ ] Loading states and skeleton screens
@@ -1098,6 +1223,7 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Gap analysis (missing important papers)
 - [ ] Activity timeline and research progress tracking
 - [ ] Zotero/Mendeley sync integration
+- [ ] **Writing Assistant Upgrade**: Direct import/scanning of `.tex` files (instead of copy-paste)
 
 ---
 
@@ -1111,6 +1237,8 @@ All CLI commands should have corresponding Web UI features:
 | `find` | Search view | AI-powered search with suggestions |
 | `get` | Library (right-click → Copy) | Copy cite key, BibTeX, bibitem |
 | `show` | Paper detail view | Full paper metadata and actions |
+| `show --refs` | Library (right-click → Find References) | View all references with pagination |
+| `show --citations` | Library (right-click → Find Citations) | View citations with pagination (100/page) |
 | `fill` | Writing Assistant | Paste LaTeX, get citation suggestions |
 | `expand` | Graph view (expand buttons) | Expand refs/citations from nodes |
 | `status` | Dashboard + Settings | Database stats, API usage |

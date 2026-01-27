@@ -10,6 +10,8 @@ pkgs.mkShell {
     # --- System Tools ---
     ffmpeg  # faster-whisper音訊處理
     git
+    # --- Node.js for frontend ---
+    nodejs_20
     # --- Audio Libraries (C/C++ Level) ---
   ];
 

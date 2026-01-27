@@ -55,8 +55,8 @@ OPENAI_API_KEY=
 # Get your key from: https://console.anthropic.com/
 #ANTHROPIC_API_KEY=
 
-# Author name(s) for auto-detecting "my papers" (comma-separated, optional)
-# Example: MY_AUTHOR_NAMES="Pan, K.,Pan, Kuo-Chuan"
+# Author name(s) for auto-detecting "my papers" (semicolon-separated, optional)
+# Example: MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 #MY_AUTHOR_NAMES=
 """
 
@@ -737,8 +737,15 @@ def get(
 def show(
     identifier: str = typer.Argument(..., help="Paper bibcode or ADS URL"),
     fetch: bool = typer.Option(False, "--fetch", "-f", help="Fetch from ADS if not in local database"),
+    refs: bool = typer.Option(False, "--refs", "-r", help="Show references (papers cited by this paper)"),
+    citations: bool = typer.Option(False, "--citations", "-c", help="Show citations (papers citing this paper)"),
+    limit: int = typer.Option(100, "--limit", "-l", help="Maximum number of references/citations to fetch"),
 ):
-    """Show detailed information about a paper."""
+    """Show detailed information about a paper.
+
+    Use --refs to show papers that this paper cites.
+    Use --citations to show papers that cite this paper.
+    """
     ensure_data_dirs()
 
     from src.core.ads_client import ADSClient
@@ -748,6 +755,10 @@ def show(
 
     paper_repo = PaperRepository(auto_embed=False)
     paper = paper_repo.get(bibcode)
+
+    # If requesting refs/citations, we need the paper info
+    if (refs or citations) and not paper and not fetch:
+        fetch = True  # Auto-fetch if requesting refs/citations
 
     if not paper and fetch:
         console.print(f"[blue]Fetching from ADS: {bibcode}[/blue]")
@@ -764,7 +775,45 @@ def show(
             console.print("[dim]Use --fetch to retrieve from ADS[/dim]")
         raise typer.Exit(1)
 
-    # Display detailed information
+    # Handle --refs flag
+    if refs:
+        console.print(f"\n[bold cyan]References for: {paper.title}[/bold cyan]")
+        console.print(f"[dim]Papers cited by {bibcode}[/dim]\n")
+
+        ads_client = ADSClient()
+        try:
+            ref_papers = ads_client.fetch_references(bibcode, limit=limit, save=False)
+        except RateLimitExceeded as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        if not ref_papers:
+            console.print("[yellow]No references found[/yellow]")
+        else:
+            console.print(f"[green]Found {len(ref_papers)} references[/green]\n")
+            _display_paper_list(ref_papers, paper_repo)
+        return
+
+    # Handle --citations flag
+    if citations:
+        console.print(f"\n[bold cyan]Citations for: {paper.title}[/bold cyan]")
+        console.print(f"[dim]Papers that cite {bibcode}[/dim]\n")
+
+        ads_client = ADSClient()
+        try:
+            citing_papers = ads_client.fetch_citations(bibcode, limit=limit, save=False)
+        except RateLimitExceeded as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        if not citing_papers:
+            console.print("[yellow]No citations found[/yellow]")
+        else:
+            console.print(f"[green]Found {len(citing_papers)} citations (showing up to {limit})[/green]\n")
+            _display_paper_list(citing_papers, paper_repo)
+        return
+
+    # Display detailed information (default behavior)
     table = Table(title=f"Paper Details", show_header=False, box=None)
     table.add_column("Field", style="cyan", width=15)
     table.add_column("Value", style="white")
@@ -836,6 +885,49 @@ def show(
     if paper.bibtex:
         console.print()
         console.print(Panel(paper.bibtex, title="BibTeX", border_style="green"))
+
+
+def _display_paper_list(papers: list, paper_repo: PaperRepository) -> None:
+    """Display a list of papers in a formatted table."""
+    table = Table(show_header=True)
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Year", style="cyan", width=6)
+    table.add_column("Title", style="white", max_width=60)
+    table.add_column("Authors", style="dim", max_width=25)
+    table.add_column("Cit.", style="yellow", width=6)
+    table.add_column("In Lib", style="green", width=6)
+
+    for i, p in enumerate(papers, 1):
+        # Check if paper is in library
+        in_library = paper_repo.get(p.bibcode) is not None
+        in_lib_str = "✓" if in_library else ""
+
+        # Format authors
+        authors_str = ""
+        if p.authors:
+            try:
+                author_list = json.loads(p.authors)
+                if len(author_list) > 2:
+                    authors_str = f"{author_list[0].split(',')[0]}+{len(author_list)-1}"
+                else:
+                    authors_str = ", ".join([a.split(",")[0] for a in author_list])
+            except (json.JSONDecodeError, IndexError):
+                authors_str = str(p.authors)[:25]
+
+        # Truncate title if needed
+        title = p.title[:57] + "..." if len(p.title) > 60 else p.title
+
+        table.add_row(
+            str(i),
+            str(p.year) if p.year else "-",
+            title,
+            authors_str,
+            str(p.citation_count) if p.citation_count else "0",
+            in_lib_str,
+        )
+
+    console.print(table)
+    console.print("\n[dim]Hint: Use 'search-ads seed <bibcode>' to add a paper to your library[/dim]")
 
 
 @app.command()
@@ -1536,8 +1628,10 @@ def mine(
     List all your papers:
         search-ads mine --list
 
-    Configure auto-detection by setting MY_AUTHOR_NAMES environment variable:
-        export MY_AUTHOR_NAMES="Pan, K.,Pan, Ke-Jung"
+    Configure auto-detection by setting MY_AUTHOR_NAMES in ~/.search-ads/.env:
+        MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
+
+    Or use the Web UI: click the user icon in the top right to edit author names.
     """
     ensure_data_dirs()
 
@@ -1661,6 +1755,38 @@ def note(
     else:
         console.print(f"[yellow]No note for: {bibcode}[/yellow]")
         console.print(f"[dim]Use --add to create a note[/dim]")
+
+
+@app.command()
+def web(
+    host: str = typer.Option(settings.web_host, "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(settings.web_port, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
+):
+    """Start the web UI server.
+
+    The web UI provides a browser-based interface for managing your paper library,
+    searching papers, and visualizing citation networks.
+
+    Examples:
+        search-ads web                    # Start on default port 9527
+        search-ads web --port 8080        # Start on port 8080
+        search-ads web --reload           # Start with auto-reload for development
+    """
+    ensure_data_dirs()
+
+    import uvicorn
+
+    console.print(f"[bold green]Starting Search-ADS Web UI[/bold green]")
+    console.print(f"[blue]Server: http://{host}:{port}[/blue]")
+    console.print(f"[dim]Press Ctrl+C to stop[/dim]\n")
+
+    uvicorn.run(
+        "src.web.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ A CLI tool for automating scientific paper citations in LaTeX documents using NA
 | Phase 1: Core CLI | ✅ Complete |
 | Phase 2: Vector Search & LLM Ranking | ✅ Complete |
 | Phase 3: PDF Handling | ✅ Complete |
-| Phase 4: Web UI | 🔜 Planned |
+| Phase 4: Web UI | 🚧 In Progress |
 
 ## Features
 
@@ -29,33 +29,43 @@ A CLI tool for automating scientific paper citations in LaTeX documents using NA
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    CLI Interface (Typer)                │
-│  (seed, find, get, fill, show, db, pdf, project)       │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-        ┌─────────┼──────────┐
-        │         │          │
-┌───────▼──┐ ┌───▼────┐ ┌──▼──────┐
-│  LaTeX   │ │Citation│ │   PDF   │
-│  Parser  │ │ Engine │ │ Handler │
-└────┬─────┘ └───┬────┘ └──┬──────┘
-     │           │         │
-     └───────────┼─────────┘
-            ┌────▼────────┐
-            │ LLM Client  │  (Claude/OpenAI)
-            └─────┬───────┘
-                  │
-        ┌─────────┼──────────┐
-        │         │          │
-┌───────▼──┐ ┌───▼────────┐ │
-│  ADS API │ │ Repository │ │
-│  Client  │ │ (CRUD Ops) │ │
-└──────────┘ └───┬────────┘ │
-                 │          │
-          ┌──────▼──────────▼┐
-          │  Database Layer  │
-          │ SQLite + ChromaDB│
-          └──────────────────┘
+│                  User Interfaces                        │
+│  ┌─────────────────────┐  ┌──────────────────────────┐  │
+│  │   CLI (Typer)       │  │   Web UI (React)         │  │
+│  │ seed, find, get...  │  │ Library, Search, Graph   │  │
+│  └──────────┬──────────┘  └────────────┬─────────────┘  │
+└─────────────┼──────────────────────────┼────────────────┘
+              │                          │
+              │              ┌───────────▼───────────┐
+              │              │  FastAPI Backend      │
+              │              │  /api/papers, search  │
+              │              └───────────┬───────────┘
+              │                          │
+              └────────────┬─────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+┌───────▼──┐ ┌─────────────▼──┐ ┌─────────────▼──┐
+│  LaTeX   │ │ Citation       │ │   PDF          │
+│  Parser  │ │ Engine         │ │   Handler      │
+└────┬─────┘ └───────┬────────┘ └───────┬────────┘
+     │               │                  │
+     └───────────────┼──────────────────┘
+                ┌────▼────────┐
+                │ LLM Client  │  (Claude/OpenAI)
+                └─────┬───────┘
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+┌───────▼──┐ ┌───────▼────────┐    │
+│  ADS API │ │  Repository    │    │
+│  Client  │ │  (CRUD Ops)    │    │
+└──────────┘ └───────┬────────┘    │
+                     │             │
+              ┌──────▼─────────────▼┐
+              │   Database Layer    │
+              │  SQLite + ChromaDB  │
+              └─────────────────────┘
 ```
 
 ## Installation
@@ -108,6 +118,66 @@ cd search-ads
 pip install -e ".[dev]"
 ```
 
+### Web UI Installation
+
+The Web UI consists of a FastAPI backend and a React frontend. The backend is included with the main package installation. To run the full Web UI:
+
+#### Prerequisites
+
+- Python 3.10+ (for backend)
+- Node.js 18+ and npm (for frontend)
+
+#### Backend Setup
+
+The backend dependencies are already included when you install search-ads. No additional installation is needed.
+
+**Start the backend server:**
+
+```bash
+# From the project root directory
+uvicorn src.web.main:app --reload --port 9527
+```
+
+The API will be available at `http://localhost:9527` with interactive docs at `http://localhost:9527/docs`.
+
+#### Frontend Setup
+
+```bash
+# Navigate to the frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173`.
+
+#### Running Both (Development)
+
+For development, run both servers simultaneously in separate terminals:
+
+```bash
+# Terminal 1 - Backend
+uvicorn src.web.main:app --reload --port 9527
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
+```
+
+#### Production Build
+
+To build the frontend for production:
+
+```bash
+cd frontend
+npm run build
+```
+
+The built files will be in `frontend/dist/` and can be served by any static file server.
+
 ### Dependencies
 
 All dependencies are automatically installed. Key dependencies include:
@@ -148,9 +218,11 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Optional - Alternative LLM backend (preferred when available)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# Optional - Auto-detect your papers by author name
-MY_AUTHOR_NAMES="LastName, FirstInitial.,LastName, Full Name"
+# Optional - Auto-detect your papers by author name (semicolon-separated)
+MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 ```
+
+**Tip**: You can also edit your author names in the Web UI by clicking the user icon in the top right corner.
 
 Get your API keys:
 
@@ -379,6 +451,7 @@ By default, data is stored in `~/.search-ads/`:
 | `expand <bibcode>` | Expand citation graph |
 | `status` | Show database and API usage stats |
 | `list-papers` | List papers in database |
+| `mine` | Mark/unmark/list your own papers |
 | `import` | Import from BibTeX file |
 | `db embed` | Embed papers for semantic search |
 | `db update` | Update citation counts |
@@ -393,6 +466,38 @@ By default, data is stored in `~/.search-ads/`:
 | `project list` | List projects or papers in project |
 | `project add-paper` | Add paper to project |
 | `project delete` | Delete a project |
+
+## Web UI
+
+The Web UI provides a graphical interface for managing your paper library. See [Web UI Installation](#web-ui-installation) for setup instructions.
+
+### Views
+
+| View | Description |
+| ---- | ----------- |
+| Dashboard | Overview with stats, recent papers, and recommendations |
+| Library | Full paper table with sorting, filtering, and bulk actions |
+| Search | AI-powered semantic search across library and ADS |
+| Graph | Interactive citation network visualization |
+| Writing | Paste LaTeX text and get citation suggestions |
+| Import | Import from ADS URLs, BibTeX files, or clipboard |
+| Settings | API keys, preferences, and database management |
+
+### API Endpoints
+
+The backend exposes a RESTful API at `http://localhost:9527/api/`:
+
+| Endpoint | Description |
+| -------- | ----------- |
+| `/api/papers` | Paper CRUD operations |
+| `/api/projects` | Project management |
+| `/api/search` | Semantic and local search |
+| `/api/notes` | Paper notes management |
+| `/api/pdf` | PDF download and embedding |
+| `/api/import` | Import from various sources |
+| `/api/settings` | Configuration management |
+
+Interactive API documentation is available at `http://localhost:9527/docs`.
 
 ## License
 
