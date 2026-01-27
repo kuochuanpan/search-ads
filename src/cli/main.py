@@ -50,10 +50,12 @@ ADS_API_KEY=
 # OpenAI API key for embeddings and LLM features (optional)
 # Get your key from: https://platform.openai.com/api-keys
 OPENAI_API_KEY=
+OPENAI_MODEL="gpt-4o-mini"
 
 # Anthropic API key for Claude LLM features (optional)
 # Get your key from: https://console.anthropic.com/
 #ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL="claude-3-haiku-20240307"
 
 # Author name(s) for auto-detecting "my papers" (semicolon-separated, optional)
 # Example: MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
