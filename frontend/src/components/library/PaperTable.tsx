@@ -103,7 +103,7 @@ export function PaperTable(props: PaperTableProps) {
 
   // Use controlled sorting if provided, otherwise local state
   const [localSorting, setLocalSorting] = useState<SortingState>([
-    { id: 'updated_at', desc: true },
+    { id: 'added_date', desc: true },
   ])
 
   const sorting = props.sorting ?? localSorting

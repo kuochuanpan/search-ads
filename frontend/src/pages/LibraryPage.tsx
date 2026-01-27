@@ -28,7 +28,7 @@ export function LibraryPage() {
   })
 
   const [sorting, setSorting] = useState<{ id: string; desc: boolean }[]>([
-    { id: 'updated_at', desc: true },
+    { id: 'added_date', desc: true },
   ])
 
   // Map react-table sorting to API params

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Trash2, Star, Download, FolderPlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
@@ -12,6 +13,7 @@ interface BulkActionsBarProps {
 }
 
 export function BulkActionsBar({ selectedBibcodes }: BulkActionsBarProps) {
+  const queryClient = useQueryClient()
   const { deselectAll } = usePaperSelection()
   const bulkDelete = useBulkDeletePapers()
   const bulkMarkMyPapers = useBulkMarkMyPapers()
@@ -35,15 +37,26 @@ export function BulkActionsBar({ selectedBibcodes }: BulkActionsBarProps) {
 
   const handleDownloadPdfs = async () => {
     setIsDownloading(true)
-    try {
-      for (const bibcode of selectedBibcodes) {
+    let successCount = 0
+    let failCount = 0
+
+    // Process one by one to avoid overwhelming the server
+    for (const bibcode of selectedBibcodes) {
+      try {
         await api.downloadPdf(bibcode)
+        successCount++
+      } catch (e) {
+        console.error(`Failed to download PDF for ${bibcode}:`, e)
+        failCount++
       }
-    } catch (e) {
-      console.error('Failed to download PDFs:', e)
-    } finally {
-      setIsDownloading(false)
     }
+
+    setIsDownloading(false)
+    // Optional: could show a toast here with results
+    console.log(`Batch download complete. Success: ${successCount}, Failed: ${failCount}`)
+
+    // Refresh the papers list to show new PDF status
+    queryClient.invalidateQueries({ queryKey: ['papers'] })
   }
 
   const handleAddToProject = async (projectName: string) => {

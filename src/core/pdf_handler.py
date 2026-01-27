@@ -32,6 +32,19 @@ class PDFHandler:
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
+    DEFAULT_HEADERS = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+    }
+
     def __init__(self, pdf_dir: Optional[Path] = None):
         """Initialize the PDF handler.
 
@@ -99,60 +112,73 @@ class PDFHandler:
         if paper.arxiv_id:
             urls_to_try.append((f"https://arxiv.org/pdf/{paper.arxiv_id}.pdf", "arXiv"))
 
-        headers = {"User-Agent": self.USER_AGENT}
-        last_error = None
+        # Use a session to handle cookies and redirects better
+        with requests.Session() as session:
+            session.headers.update(self.DEFAULT_HEADERS)
+            
+            for url, source in urls_to_try:
+                # Handle arXiv URLs - ensure we get the PDF
+                if "arxiv.org" in url and not url.endswith(".pdf"):
+                    # Convert abstract URL to PDF URL
+                    if "/abs/" in url:
+                        url = url.replace("/abs/", "/pdf/") + ".pdf"
+                    elif not url.endswith(".pdf"):
+                        url = url + ".pdf"
+                
+                # Add Referer for ADS links to look more legitimate
+                if "adsabs.harvard.edu" in url:
+                    session.headers["Referer"] = "https://ui.adsabs.harvard.edu/"
+                else:
+                    # Remove referer for others if present to avoid leaking it
+                    session.headers.pop("Referer", None)
 
-        for url, source in urls_to_try:
-            # Handle arXiv URLs - ensure we get the PDF
-            if "arxiv.org" in url and not url.endswith(".pdf"):
-                # Convert abstract URL to PDF URL
-                if "/abs/" in url:
-                    url = url.replace("/abs/", "/pdf/") + ".pdf"
-                elif not url.endswith(".pdf"):
-                    url = url + ".pdf"
+                try:
+                    print(f"Attempting download from {source}: {url}")
+                    response = session.get(
+                        url, 
+                        timeout=60, 
+                        stream=True, 
+                        allow_redirects=True
+                    )
+                    response.raise_for_status()
 
-            try:
-                print(f"Attempting download from {source}: {url}")
-                response = requests.get(url, headers=headers, timeout=60, stream=True)
-                response.raise_for_status()
-
-                # Check if we got a PDF
-                content_type = response.headers.get("Content-Type", "").lower()
-                if "pdf" not in content_type and not url.endswith(".pdf"):
-                    # This happens with paywalls (returns HTML)
-                    msg = f"{source} returned non-PDF content ({content_type})"
-                    print(msg)
-                    last_error = msg
-                    continue
-
-                # Save the PDF to a temporary path first
-                temp_path = pdf_path.with_suffix(".tmp")
-                with open(temp_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-
-                # Verify it's a valid PDF
-                if temp_path.stat().st_size < 1000:
-                    temp_path.unlink()
-                    last_error = "Downloaded file too small"
-                    continue
-
-                # Quick check for PDF magic bytes
-                with open(temp_path, "rb") as f:
-                    header = f.read(8)
-                    if not header.startswith(b"%PDF"):
-                        temp_path.unlink()
-                        last_error = "Downloaded file is not a valid PDF header"
+                    # Check if we got a PDF
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    if "pdf" not in content_type and not url.endswith(".pdf"):
+                        # This happens with paywalls (returns HTML)
+                        msg = f"{source} returned non-PDF content ({content_type})"
+                        print(msg)
+                        last_error = msg
                         continue
 
-                # Success! Rename to final path
-                temp_path.rename(pdf_path)
-                return pdf_path
+                    # Save the PDF to a temporary path first
+                    temp_path = pdf_path.with_suffix(".tmp")
+                    with open(temp_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
 
-            except Exception as e:
-                last_error = str(e)
-                print(f"Failed to download from {source}: {e}")
-                continue
+                    # Verify it's a valid PDF
+                    if temp_path.stat().st_size < 1000:
+                        temp_path.unlink()
+                        last_error = "Downloaded file too small"
+                        continue
+
+                    # Quick check for PDF magic bytes
+                    with open(temp_path, "rb") as f:
+                        header = f.read(8)
+                        if not header.startswith(b"%PDF"):
+                            temp_path.unlink()
+                            last_error = "Downloaded file is not a valid PDF header"
+                            continue
+
+                    # Success! Rename to final path
+                    temp_path.rename(pdf_path)
+                    return pdf_path
+
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"Failed to download from {source}: {e}")
+                    continue
 
         # If we get here, all attempts failed
         if pdf_path.exists():
