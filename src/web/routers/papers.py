@@ -1,5 +1,7 @@
 """Papers API router."""
 
+import json
+
 from typing import Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -31,7 +33,7 @@ async def list_papers(
     is_my_paper: Optional[bool] = Query(default=None),
     has_note: Optional[bool] = Query(default=None),
     search: Optional[str] = Query(default=None),
-    sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at"] = Query(default="created_at"),
+    sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at", "authors"] = Query(default="created_at"),
     sort_order: Literal["asc", "desc"] = Query(default="desc"),
     paper_repo: PaperRepository = Depends(get_paper_repo),
     note_repo: NoteRepository = Depends(get_note_repo),
@@ -83,6 +85,18 @@ async def list_papers(
         papers.sort(key=lambda p: p.created_at, reverse=reverse)
     elif sort_by == "updated_at":
         papers.sort(key=lambda p: p.updated_at, reverse=reverse)
+    elif sort_by == "authors":
+        def get_authors_sort_key(p):
+            if not p.authors:
+                return ""
+            try:
+                authors_list = json.loads(p.authors)
+                # Join authors for sorting, or use first author
+                return " ".join(authors_list).lower() if authors_list else ""
+            except (json.JSONDecodeError, TypeError):
+                return ""
+        
+        papers.sort(key=get_authors_sort_key, reverse=reverse)
 
     # Get total before pagination
     total = len(papers)

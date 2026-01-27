@@ -9,6 +9,7 @@ import { BulkActionsBar } from '@/components/library/BulkActionsBar'
 import { usePapers } from '@/hooks/usePapers'
 import { useActiveProject, usePaperSelection } from '@/store'
 import { Paper } from '@/lib/api'
+import { useStats } from '@/hooks/useStats'
 
 export function LibraryPage() {
   const navigate = useNavigate()
@@ -60,6 +61,8 @@ export function LibraryPage() {
     sortBy,
     sortOrder
   ])
+
+  const { data: stats } = useStats()
 
   const { data, isLoading, error } = usePapers(queryParams)
 
@@ -130,7 +133,12 @@ export function LibraryPage() {
       </div>
 
       {/* Filters */}
-      <LibraryFilters filters={filters} onChange={setFilters} />
+      <LibraryFilters
+        filters={filters}
+        onChange={setFilters}
+        minYear={stats?.min_year}
+        maxYear={stats?.max_year}
+      />
 
       {/* Bulk Actions Bar */}
       {selectedCount() > 0 && (

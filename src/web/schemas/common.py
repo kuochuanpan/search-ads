@@ -35,6 +35,8 @@ class StatsResponse(BaseModel):
     papers_with_pdf: int
     papers_with_embedded_pdf: int
     my_papers_count: int
+    min_year: Optional[int] = None
+    max_year: Optional[int] = None
 
 
 class ApiUsageResponse(BaseModel):

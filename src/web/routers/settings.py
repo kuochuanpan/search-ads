@@ -112,6 +112,8 @@ async def get_stats(
         papers_with_pdf=sum(1 for p in papers if p.pdf_path),
         papers_with_embedded_pdf=sum(1 for p in papers if p.pdf_embedded),
         my_papers_count=sum(1 for p in papers if p.is_my_paper),
+        min_year=min((p.year for p in papers if p.year), default=None),
+        max_year=max((p.year for p in papers if p.year), default=None),
     )
 
 

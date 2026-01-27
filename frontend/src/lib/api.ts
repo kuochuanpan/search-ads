@@ -59,6 +59,8 @@ export interface StatsResponse {
   papers_with_pdf: number
   papers_with_embedded_pdf: number
   my_papers_count: number
+  min_year?: number
+  max_year?: number
 }
 
 export interface ApiUsageResponse {

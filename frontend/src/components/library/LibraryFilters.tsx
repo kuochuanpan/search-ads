@@ -19,10 +19,18 @@ export interface LibraryFiltersState {
 interface LibraryFiltersProps {
   filters: LibraryFiltersState
   onChange: (filters: LibraryFiltersState) => void
+  minYear?: number
+  maxYear?: number
 }
 
-export function LibraryFilters({ filters, onChange }: LibraryFiltersProps) {
+export function LibraryFilters({ filters, onChange, minYear, maxYear }: LibraryFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Default to 1900 if not provided
+  const currentYear = new Date().getFullYear()
+  const startYear = minYear !== undefined ? minYear : 1900
+  const endYear = maxYear !== undefined ? maxYear : currentYear
+  const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => endYear - i)
 
   const updateFilter = <K extends keyof LibraryFiltersState>(
     key: K,
@@ -73,7 +81,7 @@ export function LibraryFilters({ filters, onChange }: LibraryFiltersProps) {
           onChange={(e) => updateFilter('year_min', e.target.value ? parseInt(e.target.value) : undefined)}
         >
           <option value="">Year From</option>
-          {Array.from({ length: 30 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+          {years.map((year) => (
             <option key={year} value={year}>
               {year}
             </option>
@@ -85,7 +93,7 @@ export function LibraryFilters({ filters, onChange }: LibraryFiltersProps) {
           onChange={(e) => updateFilter('year_max', e.target.value ? parseInt(e.target.value) : undefined)}
         >
           <option value="">Year To</option>
-          {Array.from({ length: 30 }, (_, i) => new Date().getFullYear() - i + 30).map((year) => (
+          {years.map((year) => (
             <option key={year} value={year}>
               {year}
             </option>
