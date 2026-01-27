@@ -24,6 +24,8 @@ import {
   Network,
   FolderPlus,
   ChevronRight,
+  BookMarked,
+  FileCode,
 } from 'lucide-react'
 import { Paper, api } from '@/lib/api'
 import { formatAuthorList, cn } from '@/lib/utils'
@@ -32,6 +34,7 @@ import { usePaperSelection } from '@/store'
 import { useToggleMyPaper, useDeletePaper, useDownloadPdf, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
 import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useNote } from '@/hooks/useNotes'
+import { ReferencesModal } from './ReferencesModal'
 import { Loader2 } from 'lucide-react'
 
 interface PaperTableProps {
@@ -103,6 +106,18 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
   })
 
   const [showProjectSubmenu, setShowProjectSubmenu] = useState(false)
+
+  // References/Citations modal state
+  const [referencesModal, setReferencesModal] = useState<{
+    isOpen: boolean
+    bibcode: string
+    title?: string
+    type: 'references' | 'citations'
+  }>({
+    isOpen: false,
+    bibcode: '',
+    type: 'references',
+  })
 
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -208,6 +223,22 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       case 'graph':
         navigate({ to: '/graph/$bibcode', params: { bibcode: paper.bibcode } })
         break
+      case 'find_references':
+        setReferencesModal({
+          isOpen: true,
+          bibcode: paper.bibcode,
+          title: paper.title,
+          type: 'references',
+        })
+        break
+      case 'find_citations':
+        setReferencesModal({
+          isOpen: true,
+          bibcode: paper.bibcode,
+          title: paper.title,
+          type: 'citations',
+        })
+        break
       case 'toggle_mine':
         toggleMyPaper.mutate({ bibcode: paper.bibcode, isMyPaper: !paper.is_my_paper })
         break
@@ -223,6 +254,31 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
       case 'copy_bibtex':
         if (paper.bibtex) {
           await navigator.clipboard.writeText(paper.bibtex)
+        } else {
+          // Fetch from ADS if not cached
+          try {
+            const result = await api.getCitationExport(paper.bibcode)
+            if (result.bibtex) {
+              await navigator.clipboard.writeText(result.bibtex)
+            }
+          } catch (e) {
+            console.error('Failed to fetch BibTeX:', e)
+          }
+        }
+        break
+      case 'copy_aastex':
+        if (paper.bibitem_aastex) {
+          await navigator.clipboard.writeText(paper.bibitem_aastex)
+        } else {
+          // Fetch from ADS if not cached
+          try {
+            const result = await api.getCitationExport(paper.bibcode)
+            if (result.bibitem_aastex) {
+              await navigator.clipboard.writeText(result.bibitem_aastex)
+            }
+          } catch (e) {
+            console.error('Failed to fetch AASTeX:', e)
+          }
         }
         break
       case 'copy_citekey':
@@ -478,6 +534,7 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
     onColumnSizingChange: setColumnSizing,
     columnResizeMode: 'onChange',
     enableColumnResizing: true,
+    enableSortingRemoval: false, // Only toggle between asc/desc, no "clear" state
   })
 
   return (
@@ -574,6 +631,24 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
           <div className="my-1 border-t" />
 
           <button
+            onClick={() => handleContextAction('find_references')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary"
+          >
+            <Icon icon={BookMarked} size={16} />
+            Find References
+          </button>
+
+          <button
+            onClick={() => handleContextAction('find_citations')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary"
+          >
+            <Icon icon={Quote} size={16} />
+            Find Citations
+          </button>
+
+          <div className="my-1 border-t" />
+
+          <button
             onClick={() => handleContextAction('toggle_mine')}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary"
           >
@@ -656,11 +731,18 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
 
           <button
             onClick={() => handleContextAction('copy_bibtex')}
-            disabled={!contextMenu.paper.bibtex}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary disabled:opacity-50"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary"
           >
             <Icon icon={Copy} size={16} />
             Copy BibTeX
+          </button>
+
+          <button
+            onClick={() => handleContextAction('copy_aastex')}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary"
+          >
+            <Icon icon={FileCode} size={16} />
+            Copy AASTeX
           </button>
 
           <button
@@ -682,6 +764,15 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
           </button>
         </div>
       )}
+
+      {/* References/Citations Modal */}
+      <ReferencesModal
+        isOpen={referencesModal.isOpen}
+        onClose={() => setReferencesModal({ ...referencesModal, isOpen: false })}
+        bibcode={referencesModal.bibcode}
+        title={referencesModal.title}
+        type={referencesModal.type}
+      />
     </div>
   )
 }

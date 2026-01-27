@@ -4,7 +4,8 @@ from typing import Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.db.repository import PaperRepository, NoteRepository, ProjectRepository
-from src.web.dependencies import get_paper_repo, get_note_repo, get_project_repo
+from src.core.ads_client import ADSClient
+from src.web.dependencies import get_paper_repo, get_note_repo, get_project_repo, get_ads_client
 from src.web.schemas.paper import (
     PaperRead,
     PaperListResponse,
@@ -240,3 +241,46 @@ async def bulk_mark_my_papers(
         failed=failed,
         errors=errors,
     )
+
+
+@router.get("/{bibcode}/citations-export")
+async def get_citation_export(
+    bibcode: str,
+    paper_repo: PaperRepository = Depends(get_paper_repo),
+    ads_client: ADSClient = Depends(get_ads_client),
+):
+    """Get BibTeX and AASTeX citation formats for a paper.
+
+    Fetches from ADS if not cached in database.
+    """
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        raise HTTPException(status_code=404, detail=f"Paper not found: {bibcode}")
+
+    bibtex = paper.bibtex
+    bibitem_aastex = paper.bibitem_aastex
+    updated = False
+
+    # Fetch bibtex from ADS if not cached
+    if not bibtex:
+        bibtex = ads_client.generate_bibtex(bibcode)
+        if bibtex:
+            paper.bibtex = bibtex
+            updated = True
+
+    # Fetch aastex from ADS if not cached
+    if not bibitem_aastex:
+        bibitem_aastex = ads_client.generate_aastex(bibcode)
+        if bibitem_aastex:
+            paper.bibitem_aastex = bibitem_aastex
+            updated = True
+
+    # Save updates to database
+    if updated:
+        paper_repo.add(paper, embed=False)
+
+    return {
+        "bibcode": bibcode,
+        "bibtex": bibtex,
+        "bibitem_aastex": bibitem_aastex,
+    }

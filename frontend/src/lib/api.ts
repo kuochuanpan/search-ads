@@ -195,6 +195,37 @@ export interface GenerateBibliographyResponse {
   combined: string
 }
 
+// References/Citations types
+export interface PaperSummary {
+  bibcode: string
+  title?: string
+  authors?: string
+  year?: number
+  journal?: string
+  citation_count?: number
+  in_library: boolean
+}
+
+export interface ReferencesResponse {
+  bibcode: string
+  title?: string
+  references: PaperSummary[]
+  count: number
+  total?: number
+  page: number
+  has_more: boolean
+}
+
+export interface CitationsResponse {
+  bibcode: string
+  title?: string
+  citations: PaperSummary[]
+  count: number
+  total?: number
+  page: number
+  has_more: boolean
+}
+
 // API Client
 async function request<T>(
   path: string,
@@ -286,6 +317,11 @@ export const api = {
   getMyPapers: (limit = 100) =>
     request<PaperListResponse>(`/papers/mine?limit=${limit}`),
 
+  getCitationExport: (bibcode: string) =>
+    request<{ bibcode: string; bibtex?: string; bibitem_aastex?: string }>(
+      `/papers/${encodeURIComponent(bibcode)}/citations-export`
+    ),
+
   // Projects
   getProjects: () =>
     request<ProjectListResponse>('/projects'),
@@ -353,15 +389,39 @@ export const api = {
     ),
 
   // Citations
-  getReferences: (bibcode: string) =>
-    request<{ bibcode: string; references: string[]; count: number }>(
-      `/citations/${encodeURIComponent(bibcode)}/references`
-    ),
+  getReferences: (bibcode: string, options?: {
+    fetch_from_ads?: boolean
+    limit?: number
+    page?: number
+    save?: boolean
+  }) => {
+    const params = new URLSearchParams()
+    if (options?.fetch_from_ads) params.append('fetch_from_ads', 'true')
+    if (options?.limit) params.append('limit', String(options.limit))
+    if (options?.page) params.append('page', String(options.page))
+    if (options?.save) params.append('save', 'true')
+    const query = params.toString()
+    return request<ReferencesResponse>(
+      `/citations/${encodeURIComponent(bibcode)}/references${query ? `?${query}` : ''}`
+    )
+  },
 
-  getCitations: (bibcode: string) =>
-    request<{ bibcode: string; citations: string[]; count: number }>(
-      `/citations/${encodeURIComponent(bibcode)}/citations`
-    ),
+  getCitations: (bibcode: string, options?: {
+    fetch_from_ads?: boolean
+    limit?: number
+    page?: number
+    save?: boolean
+  }) => {
+    const params = new URLSearchParams()
+    if (options?.fetch_from_ads) params.append('fetch_from_ads', 'true')
+    if (options?.limit) params.append('limit', String(options.limit))
+    if (options?.page) params.append('page', String(options.page))
+    if (options?.save) params.append('save', 'true')
+    const query = params.toString()
+    return request<CitationsResponse>(
+      `/citations/${encodeURIComponent(bibcode)}/citations${query ? `?${query}` : ''}`
+    )
+  },
 
   // Search
   searchLocal: (query: string, limit = 20) =>

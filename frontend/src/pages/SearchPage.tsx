@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Sparkles, BookOpen, FileText, Library, Plus, Check, ChevronDown, ChevronUp, ExternalLink, Copy } from 'lucide-react'
+import { Search, Sparkles, BookOpen, FileText, Library, Plus, Check, ChevronDown, ChevronUp, ExternalLink, Copy, FileCode } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
@@ -8,6 +8,8 @@ import { Modal } from '@/components/ui/Modal'
 import { useAISearch, AISearchParams } from '@/hooks/useSearch'
 import { useProjects, useAddPapersToProject } from '@/hooks/useProjects'
 import { api, SearchResultItem } from '@/lib/api'
+
+type CopiedType = 'bibtex' | 'aastex' | null
 
 type SearchMode = 'natural' | 'keywords' | 'similar'
 type SearchScope = 'library' | 'ads' | 'pdf'
@@ -32,7 +34,7 @@ export function SearchPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedForAdd, setSelectedForAdd] = useState<SearchResultItem | null>(null)
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set())
-  const [copiedBibcode, setCopiedBibcode] = useState<string | null>(null)
+  const [copiedState, setCopiedState] = useState<{bibcode: string; type: CopiedType} | null>(null)
   const [addedToLibrary, setAddedToLibrary] = useState<Set<string>>(new Set())
 
   const { data: projects } = useProjects()
@@ -121,10 +123,21 @@ export function SearchPage() {
     try {
       const result = await api.generateBibliography([paper.bibcode], 'bibtex')
       await navigator.clipboard.writeText(result.combined)
-      setCopiedBibcode(paper.bibcode)
-      setTimeout(() => setCopiedBibcode(null), 2000)
+      setCopiedState({ bibcode: paper.bibcode, type: 'bibtex' })
+      setTimeout(() => setCopiedState(null), 2000)
     } catch (error) {
       console.error('Failed to copy BibTeX:', error)
+    }
+  }
+
+  const copyAASTeX = async (paper: SearchResultItem) => {
+    try {
+      const result = await api.generateBibliography([paper.bibcode], 'aastex')
+      await navigator.clipboard.writeText(result.combined)
+      setCopiedState({ bibcode: paper.bibcode, type: 'aastex' })
+      setTimeout(() => setCopiedState(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy AASTeX:', error)
     }
   }
 
@@ -395,8 +408,16 @@ export function SearchPage() {
                       size="sm"
                       onClick={() => copyBibTeX(paper)}
                     >
-                      <Icon icon={copiedBibcode === paper.bibcode ? Check : Copy} size={14} />
-                      {copiedBibcode === paper.bibcode ? 'Copied!' : 'BibTeX'}
+                      <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? Check : Copy} size={14} />
+                      {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? 'Copied!' : 'BibTeX'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyAASTeX(paper)}
+                    >
+                      <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? Check : FileCode} size={14} />
+                      {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? 'Copied!' : 'AASTeX'}
                     </Button>
                   </div>
 

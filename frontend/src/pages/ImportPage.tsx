@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, Upload, Clipboard, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -9,6 +10,7 @@ import { useActiveProject } from '@/store'
 import { api } from '@/lib/api'
 
 export function ImportPage() {
+  const queryClient = useQueryClient()
   const { data: projects } = useProjects()
   const { project: activeProject } = useActiveProject()
 
@@ -49,7 +51,13 @@ export function ImportPage() {
         expand_citations: expandCitations,
       })
       setAdsResult({ success: result.success, message: result.message })
-      if (result.success) setAdsUrl('')
+      if (result.success) {
+        setAdsUrl('')
+        // Invalidate queries to refresh library view
+        queryClient.invalidateQueries({ queryKey: ['papers'] })
+        queryClient.invalidateQueries({ queryKey: ['stats'] })
+        queryClient.invalidateQueries({ queryKey: ['projects'] })
+      }
     } catch (e: any) {
       setAdsResult({ success: false, message: e.message || 'Import failed' })
     } finally {

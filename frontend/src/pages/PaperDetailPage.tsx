@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   ExternalLink,
@@ -40,10 +41,14 @@ export function PaperDetailPage() {
   const deleteNote = useDeleteNote()
   const addPaperToProject = useAddPaperToProject()
 
+  const queryClient = useQueryClient()
   const [showNoteModal, setShowNoteModal] = useState(false)
   const [noteContent, setNoteContent] = useState('')
   const [copiedBibtex, setCopiedBibtex] = useState(false)
   const [copiedCiteKey, setCopiedCiteKey] = useState(false)
+  const [copiedAastex, setCopiedAastex] = useState(false)
+  const [loadingBibtex, setLoadingBibtex] = useState(false)
+  const [loadingAastex, setLoadingAastex] = useState(false)
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiAnswer, setAiAnswer] = useState<{ answer: string; sources: string[] } | null>(null)
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
@@ -79,6 +84,23 @@ export function PaperDetailPage() {
       await navigator.clipboard.writeText(paper.bibtex)
       setCopiedBibtex(true)
       setTimeout(() => setCopiedBibtex(false), 2000)
+    } else {
+      // Fetch from ADS if not cached
+      setLoadingBibtex(true)
+      try {
+        const result = await api.getCitationExport(bibcode)
+        if (result.bibtex) {
+          await navigator.clipboard.writeText(result.bibtex)
+          setCopiedBibtex(true)
+          setTimeout(() => setCopiedBibtex(false), 2000)
+          // Invalidate query to refresh paper data
+          queryClient.invalidateQueries({ queryKey: ['paper', bibcode] })
+        }
+      } catch (e) {
+        console.error('Failed to fetch BibTeX:', e)
+      } finally {
+        setLoadingBibtex(false)
+      }
     }
   }
 
@@ -86,6 +108,31 @@ export function PaperDetailPage() {
     await navigator.clipboard.writeText(bibcode)
     setCopiedCiteKey(true)
     setTimeout(() => setCopiedCiteKey(false), 2000)
+  }
+
+  const handleCopyAastex = async () => {
+    if (paper?.bibitem_aastex) {
+      await navigator.clipboard.writeText(paper.bibitem_aastex)
+      setCopiedAastex(true)
+      setTimeout(() => setCopiedAastex(false), 2000)
+    } else {
+      // Fetch from ADS if not cached
+      setLoadingAastex(true)
+      try {
+        const result = await api.getCitationExport(bibcode)
+        if (result.bibitem_aastex) {
+          await navigator.clipboard.writeText(result.bibitem_aastex)
+          setCopiedAastex(true)
+          setTimeout(() => setCopiedAastex(false), 2000)
+          // Invalidate query to refresh paper data
+          queryClient.invalidateQueries({ queryKey: ['paper', bibcode] })
+        }
+      } catch (e) {
+        console.error('Failed to fetch AASTeX:', e)
+      } finally {
+        setLoadingAastex(false)
+      }
+    }
   }
 
   const handleToggleMyPaper = () => {
@@ -218,14 +265,27 @@ export function PaperDetailPage() {
             </Button>
           ) : null}
 
-          <Button variant="outline" onClick={handleCopyBibtex} disabled={!paper.bibtex}>
-            <Icon icon={copiedBibtex ? Check : Copy} size={16} />
-            {copiedBibtex ? 'Copied!' : 'Copy BibTeX'}
+          <Button variant="outline" onClick={handleCopyBibtex} disabled={loadingBibtex}>
+            {loadingBibtex ? (
+              <Icon icon={Loader2} size={16} className="animate-spin" />
+            ) : (
+              <Icon icon={copiedBibtex ? Check : Copy} size={16} />
+            )}
+            {copiedBibtex ? 'Copied!' : loadingBibtex ? 'Fetching...' : 'Copy BibTeX'}
           </Button>
 
           <Button variant="outline" onClick={handleCopyCiteKey}>
             <Icon icon={copiedCiteKey ? Check : Copy} size={16} />
             {copiedCiteKey ? 'Copied!' : 'Copy Cite Key'}
+          </Button>
+
+          <Button variant="outline" onClick={handleCopyAastex} disabled={loadingAastex}>
+            {loadingAastex ? (
+              <Icon icon={Loader2} size={16} className="animate-spin" />
+            ) : (
+              <Icon icon={copiedAastex ? Check : Copy} size={16} />
+            )}
+            {copiedAastex ? 'Copied!' : loadingAastex ? 'Fetching...' : 'Copy AASTeX'}
           </Button>
 
           <Button
