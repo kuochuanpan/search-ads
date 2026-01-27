@@ -390,6 +390,23 @@ export function PaperTable(props: PaperTableProps) {
       size: 60,
     },
     {
+      accessorKey: 'journal',
+      header: ({ column }) => (
+        <button
+          onClick={column.getToggleSortingHandler()}
+          className="flex items-center gap-1"
+        >
+          Journal <CitationSort sorted={column.getIsSorted() === 'asc' || column.getIsSorted() === 'desc'} />
+        </button>
+      ),
+      cell: (info) => (
+        <div className="max-w-xs truncate" title={info.getValue<string>()}>
+          {info.getValue<string>() || '-'}
+        </div>
+      ),
+      size: 150,
+    },
+    {
       id: 'is_my_paper',
       header: 'Mine',
       cell: (info) => {
@@ -503,6 +520,27 @@ export function PaperTable(props: PaperTableProps) {
       size: 40,
     },
     {
+      accessorKey: 'created_at',
+      id: 'added_date',
+      header: ({ column }) => (
+        <button
+          onClick={column.getToggleSortingHandler()}
+          className="flex items-center gap-1"
+        >
+          Added <CitationSort sorted={column.getIsSorted() === 'asc' || column.getIsSorted() === 'desc'} />
+        </button>
+      ),
+      cell: (info) => {
+        const date = new Date(info.getValue<string>())
+        return (
+          <div title={date.toLocaleString()}>
+            {date.toLocaleDateString()}
+          </div>
+        )
+      },
+      size: 100,
+    },
+    {
       id: 'actions',
       header: '',
       cell: ({ row }) => (
@@ -533,8 +571,8 @@ export function PaperTable(props: PaperTableProps) {
   })
 
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <table className="w-full">
+    <div className="border rounded-lg overflow-x-auto">
+      <table className="w-full min-w-max table-fixed">
         <thead className="bg-secondary/50">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>

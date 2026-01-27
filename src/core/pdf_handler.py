@@ -83,8 +83,7 @@ class PDFHandler:
         if pdf_path.exists() and not force:
             return pdf_path
 
-        if not paper.pdf_url:
-            raise PDFDownloadError(f"No PDF URL available for {paper.bibcode}")
+        # Strict check removed to allow fallback logic below
 
         # Strategy: Try primary URL (ADS/Journal) first, then fallback to arXiv if available
         # We construct the ADS Link Gateway URL dynamically to ensure we always try the journal first,

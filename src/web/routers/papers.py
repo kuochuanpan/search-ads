@@ -33,7 +33,7 @@ async def list_papers(
     is_my_paper: Optional[bool] = Query(default=None),
     has_note: Optional[bool] = Query(default=None),
     search: Optional[str] = Query(default=None),
-    sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at", "authors"] = Query(default="created_at"),
+    sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at", "authors", "journal"] = Query(default="created_at"),
     sort_order: Literal["asc", "desc"] = Query(default="desc"),
     paper_repo: PaperRepository = Depends(get_paper_repo),
     note_repo: NoteRepository = Depends(get_note_repo),
@@ -85,6 +85,8 @@ async def list_papers(
         papers.sort(key=lambda p: p.created_at, reverse=reverse)
     elif sort_by == "updated_at":
         papers.sort(key=lambda p: p.updated_at, reverse=reverse)
+    elif sort_by == "journal":
+        papers.sort(key=lambda p: (p.journal or "").lower(), reverse=reverse)
     elif sort_by == "authors":
         def get_authors_sort_key(p):
             if not p.authors:

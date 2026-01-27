@@ -15,6 +15,7 @@ import {
   Sparkles,
   Send,
   Loader2,
+  AlertCircle,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
@@ -258,13 +259,16 @@ export function PaperDetailPage() {
               variant="outline"
               onClick={() => downloadPdf.mutate(bibcode)}
               disabled={downloadPdf.isPending}
+              className={cn(downloadPdf.isError && "border-destructive text-destructive hover:text-destructive")}
             >
               {downloadPdf.isPending ? (
                 <Icon icon={Loader2} size={16} className="animate-spin" />
+              ) : downloadPdf.isError ? (
+                <Icon icon={AlertCircle} size={16} />
               ) : (
                 <Icon icon={Download} size={16} />
               )}
-              {downloadPdf.isPending ? 'Downloading PDF...' : 'Download PDF'}
+              {downloadPdf.isPending ? 'Downloading PDF...' : downloadPdf.isError ? 'Retry Download' : 'Download PDF'}
             </Button>
           ) : null}
 

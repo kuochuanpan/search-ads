@@ -33,7 +33,7 @@ export function LibraryPage() {
 
   // Map react-table sorting to API params
   const sortState = sorting[0]
-  const sortBy = sortState?.id as 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | undefined
+  const sortBy = sortState?.id === 'added_date' ? 'created_at' : (sortState?.id as 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | 'journal' | undefined)
   const sortOrder = sortState?.desc ? 'desc' : 'asc'
 
   // Memoize params to ensure we don't trigger any react-query overhead while typing search

@@ -315,7 +315,7 @@ export const api = {
     is_my_paper?: boolean
     has_note?: boolean
     search?: string
-    sort_by?: 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at'
+    sort_by?: 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | 'journal'
     sort_order?: 'asc' | 'desc'
   }) => {
     const searchParams = new URLSearchParams()
