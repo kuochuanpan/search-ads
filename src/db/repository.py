@@ -114,6 +114,22 @@ class PaperRepository:
         with self.db.get_session() as session:
             return session.get(Paper, bibcode)
 
+    def get_batch(self, bibcodes: list[str]) -> list[Paper]:
+        """Get multiple papers by bibcodes.
+
+        Args:
+            bibcodes: List of bibcodes to fetch
+
+        Returns:
+            List of found papers
+        """
+        if not bibcodes:
+            return []
+            
+        with self.db.get_session() as session:
+            stmt = select(Paper).where(Paper.bibcode.in_(bibcodes))
+            return list(session.exec(stmt).all())
+
     def get_all(
         self,
         limit: int = 100,
@@ -665,6 +681,22 @@ class NoteRepository:
         with self.db.get_session() as session:
             stmt = select(Note).where(Note.bibcode == bibcode)
             return session.exec(stmt).first()
+
+    def get_batch(self, bibcodes: list[str]) -> list[Note]:
+        """Get notes for multiple papers.
+
+        Args:
+            bibcodes: List of bibcodes to fetch notes for
+
+        Returns:
+            List of found notes
+        """
+        if not bibcodes:
+            return []
+
+        with self.db.get_session() as session:
+            stmt = select(Note).where(Note.bibcode.in_(bibcodes))
+            return list(session.exec(stmt).all())
 
     def get_by_id(self, note_id: int) -> Optional[Note]:
         """Get note by ID."""

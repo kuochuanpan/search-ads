@@ -101,24 +101,32 @@ class LLMClient:
 
     def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         """Call Claude API."""
+        if not self.anthropic_client:
+            raise ValueError("Anthropic client not initialized")
+            
         response = self.anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2048,
+            model=settings.anthropic_model,
+            max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.0
         )
         self.usage_repo.increment_anthropic()
         return response.content[0].text
 
     def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
         """Call OpenAI API."""
+        if not self.openai_client:
+            raise ValueError("OpenAI client not initialized")
+            
         response = self.openai_client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=2048,
+            model=settings.openai_model,
+            max_tokens=4096,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            temperature=0.0
         )
         self.usage_repo.increment_openai()
         return response.choices[0].message.content
@@ -286,112 +294,135 @@ Return the JSON analysis."""
         # Get notes for papers (for boosting)
         from src.db.repository import NoteRepository
         note_repo = NoteRepository(auto_embed=False)
+        
+        # Batch fetch notes
+        bibcodes = [p.bibcode for p in papers]
+        notes = note_repo.get_batch(bibcodes)
+        notes_map = {n.bibcode: n for n in notes}
 
-        # Prepare paper summaries for the LLM
-        paper_summaries = []
-        for i, paper in enumerate(papers):
-            summary = {
-                "id": i,
-                "bibcode": paper.bibcode,
-                "title": paper.title,
-                "year": paper.year,
-                "citations": paper.citation_count or 0,
-                "abstract": (paper.abstract[:500] + "...") if paper.abstract and len(paper.abstract) > 500 else paper.abstract,
-            }
-
-            # Add "my paper" flag for boosting
-            if paper.is_my_paper:
-                summary["is_my_paper"] = True
-
-            # Add user note if exists (for context and boosting)
-            note = note_repo.get(paper.bibcode)
-            if note:
-                summary["user_note"] = note.content[:200] + "..." if len(note.content) > 200 else note.content
-
-            paper_summaries.append(summary)
-
-        system_prompt = """You are an expert scientific paper recommender for astrophysics research.
-Your task is to rank papers by their relevance for citing in a specific context.
-
-RANKING CRITERIA (in order of importance):
-1. **User's own papers (is_my_paper=true)**: Give STRONG preference to the user's own papers when relevant. Self-citation is appropriate and expected in academic writing when the user's previous work is genuinely relevant.
-2. **Papers with user notes**: If a paper has a "user_note" field, this indicates the user has specifically annotated this paper as relevant. Consider the note content and give extra weight to papers with notes.
-3. **Match citation type needed**:
-   - For "review" or "foundational" needs: STRONGLY prefer review papers, Annual Reviews, Living Reviews, or highly-cited (>500) classic papers
-   - For "supporting" needs: prefer papers with specific observational/theoretical results
-   - For "methodological" needs: prefer papers describing techniques
-4. **Relevance to the specific claim**: How directly does the paper address what's being stated?
-5. **Paper authority**: High citation count indicates community acceptance (especially important for foundational/review citations)
-6. **Appropriateness**: A review paper is better than a narrow technical paper for broad overview statements
-
-IMPORTANT:
-- For introductory/overview statements, a well-cited review paper (even if slightly older) is MUCH better than a recent narrow paper.
-- Papers marked as "is_my_paper" should get a significant boost (add ~0.2 to relevance score) when they are relevant to the context.
-- Papers with "user_note" should be carefully considered - the user annotated them for a reason.
+        # Prepare batches (chunk size 8 for better parallelism)
+        chunk_size = 8
+        batches = [papers[i:i + chunk_size] for i in range(0, len(papers), chunk_size)]
+        
+        # Define worker function for processing a batch
+        def process_batch(batch_papers):
+            batch_summaries = []
+            for i, paper in enumerate(batch_papers):
+                summary = {
+                    "id": i, # Local ID within batch
+                    "bibcode": paper.bibcode,
+                    "title": paper.title,
+                    "year": paper.year,
+                    "citations": paper.citation_count or 0,
+                    "abstract": (paper.abstract[:500] + "...") if paper.abstract and len(paper.abstract) > 500 else paper.abstract,
+                }
+                if paper.is_my_paper:
+                    summary["is_my_paper"] = True
+                note = notes_map.get(paper.bibcode)
+                if note:
+                    summary["user_note"] = note.content[:200] + "..." if len(note.content) > 200 else note.content
+                batch_summaries.append(summary)
+            
+            # Reduce prompt overhead for batches
+            system_prompt = """You are an expert scientific paper recommender. Rank these papers by relevance to the context.
+RANKING CRITERIA:
+1. **User's own papers (is_my_paper=true)** or papers with **user_note**: Give STRONG preference.
+2. **Match citation type**: "Review"/"Foundational" -> prefer heavily cited/review papers. "Methodological" -> prefer technique papers.
+3. **Relevance**: Direct address of the claim.
+4. **Authority**: High citation count.
 
 Return a JSON array of rankings with:
-- "id": The paper ID from the input
-- "relevance_score": Float from 0.0 to 1.0 (give review papers HIGH scores for overview statements, boost user's own papers)
-- "explanation": Brief explanation of why this paper is relevant (1-2 sentences). Mention if it's the user's own paper.
-- "citation_type": The type of citation this paper would serve (foundational, review, supporting, methodological, contrasting)
-
-Return ONLY the JSON array, sorted by relevance_score descending. Include all papers."""
-
-        user_prompt = f"""Context for citation:
-{context}
-
-Analysis:
-- Topic: {context_analysis.topic}
-- Claim: {context_analysis.claim}
-- Citation type needed: {context_analysis.citation_type.value}
+- "id": The local paper ID from input
+- "relevance_score": Float 0.0-1.0
+- "explanation": Brief reason (1 sentence)
+- "citation_type": The type this paper serves
+"""
+            user_prompt = f"""Context: {context}
+Analysis: Topic: {context_analysis.topic}, Claim: {context_analysis.claim}, Needs: {context_analysis.citation_type.value}
 
 Candidate papers:
-{json.dumps(paper_summaries, indent=2)}
+{json.dumps(batch_summaries, indent=2)}
 
-Rank these papers by relevance for this citation."""
+Rank these papers."""
 
-        response = self._call_llm(system_prompt, user_prompt)
-
-        # Parse response
-        try:
-            response = response.strip()
-            if response.startswith("```"):
-                response = response.split("```")[1]
-                if response.startswith("json"):
-                    response = response[4:]
-            response = response.strip()
-
-            rankings = json.loads(response)
-
-            ranked_papers = []
-            for ranking in rankings[:top_k]:
-                paper_id = ranking.get("id", 0)
-                if 0 <= paper_id < len(papers):
-                    ranked_papers.append(
-                        RankedPaper(
-                            paper=papers[paper_id],
-                            relevance_score=float(ranking.get("relevance_score", 0.5)),
-                            relevance_explanation=ranking.get("explanation", ""),
-                            citation_type=CitationType(
-                                ranking.get("citation_type", "general").lower()
-                            ),
+            try:
+                response = self._call_llm(system_prompt, user_prompt)
+                # Cleanup and parse
+                response = response.strip()
+                if response.startswith("```"):
+                    response = response.split("```")[1]
+                    if response.startswith("json"):
+                        response = response[4:]
+                
+                rankings = json.loads(response.strip())
+                
+                # Map back to real paper objects
+                batch_results = []
+                for ranking in rankings:
+                    local_id = ranking.get("id")
+                    if local_id is not None and 0 <= local_id < len(batch_papers):
+                        batch_results.append(
+                            RankedPaper(
+                                paper=batch_papers[local_id],
+                                relevance_score=float(ranking.get("relevance_score", 0.5)),
+                                relevance_explanation=ranking.get("explanation", ""),
+                                citation_type=CitationType(
+                                    ranking.get("citation_type", "general").lower()
+                                ),
+                            )
                         )
-                    )
+                return batch_results
+            except Exception as e:
+                print(f"Batch ranking failed: {e}")
+                return []
 
-            # Sort by relevance score
-            ranked_papers.sort(key=lambda x: x.relevance_score, reverse=True)
-            return ranked_papers[:top_k]
+        # Run batches in parallel
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        all_ranked_papers = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_batch = {executor.submit(process_batch, batch): batch for batch in batches}
+            for future in as_completed(future_to_batch):
+                try:
+                    results = future.result()
+                    all_ranked_papers.extend(results)
+                except Exception as e:
+                    print(f"Batch processing exception: {e}")
+        
+        # If we got no results (e.g. all failed), fallback
+        if not all_ranked_papers:
+            return self._fallback_ranking(papers, context_analysis, top_k, notes_map)
+            
+        # Add any papers that weren't ranked (optional, maybe fallback for them?)
+        # For simple logic, we just sorting what we got.
+        # Actually, let's include unranked papers with score 0 if we want completeness, 
+        # but the fallback usually handles completely failed requests. 
+        # Mixing partial LLM results with fallback might be messy. 
+        # Let's assume reliable LLM for now or fallback if count is low.
+        
+        if len(all_ranked_papers) < len(papers) * 0.5: # If >50% failed
+             print("Too many failures, falling back to heuristic ranking")
+             return self._fallback_ranking(papers, context_analysis, top_k, notes_map)
 
-        except (json.JSONDecodeError, ValueError):
-            # Fallback: return papers sorted by citation count
-            return self._fallback_ranking(papers, context_analysis, top_k)
+        # Sort and return
+        all_ranked_papers.sort(key=lambda x: x.relevance_score, reverse=True)
+        return all_ranked_papers[:top_k]
 
     def _fallback_ranking(
-        self, papers: list[Paper], context_analysis: ContextAnalysis, top_k: int
+        self, 
+        papers: list[Paper], 
+        context_analysis: ContextAnalysis, 
+        top_k: int,
+        notes_map: dict = None
     ) -> list[RankedPaper]:
         """Fallback ranking based on citation count, with boosts for my papers and notes."""
-        from src.db.repository import NoteRepository
-        note_repo = NoteRepository(auto_embed=False)
+        if notes_map is None:
+            # Should normally be passed, but handle if not
+            from src.db.repository import NoteRepository
+            note_repo = NoteRepository(auto_embed=False)
+            bibcodes = [p.bibcode for p in papers]
+            notes = note_repo.get_batch(bibcodes)
+            notes_map = {n.bibcode: n for n in notes}
 
         # Calculate scores with boosts
         scored_papers = []
@@ -403,7 +434,7 @@ Rank these papers by relevance for this citation."""
             my_paper_boost = 0.3 if paper.is_my_paper else 0.0
 
             # Boost for having a note
-            note = note_repo.get(paper.bibcode)
+            note = notes_map.get(paper.bibcode)
             note_boost = 0.2 if note else 0.0
 
             total_score = min(base_score + my_paper_boost + note_boost, 1.0)

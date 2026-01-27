@@ -41,6 +41,10 @@ class SettingsResponse(BaseModel):
     has_ads_key: bool
     has_openai_key: bool
     has_anthropic_key: bool
+    
+    # Selected models
+    openai_model: str
+    anthropic_model: str
 
     # Author names for "my papers" detection
     my_author_names: str
@@ -49,6 +53,11 @@ class SettingsResponse(BaseModel):
 class AuthorNamesRequest(BaseModel):
     """Request to update author names."""
     author_names: str
+
+class ModelsRequest(BaseModel):
+    """Request to update LLM models."""
+    openai_model: str
+    anthropic_model: str
 
 
 @router.get("/", response_model=SettingsResponse)
@@ -67,6 +76,8 @@ async def get_settings():
         has_ads_key=bool(settings.ads_api_key),
         has_openai_key=bool(settings.openai_api_key),
         has_anthropic_key=bool(settings.anthropic_api_key),
+        openai_model=settings.openai_model,
+        anthropic_model=settings.anthropic_model,
         my_author_names=settings.my_author_names,
     )
 
@@ -94,6 +105,19 @@ async def update_author_names(request: AuthorNamesRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save author names: {str(e)}")
+
+
+@router.put("/models", response_model=MessageResponse)
+async def update_models(request: ModelsRequest):
+    """Update LLM model selection."""
+    try:
+        settings.save_models(request.openai_model, request.anthropic_model)
+        return MessageResponse(
+            message=f"Model settings updated successfully",
+            success=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save model settings: {str(e)}")
 
 
 @router.get("/stats", response_model=StatsResponse)
