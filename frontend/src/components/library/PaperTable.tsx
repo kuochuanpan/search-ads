@@ -229,7 +229,12 @@ export function PaperTable(props: PaperTableProps) {
 
     switch (action) {
       case 'view':
-        navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })
+        sessionStorage.setItem('library_scroll_y', window.scrollY.toString())
+        navigate({
+          to: '/library/$bibcode',
+          params: { bibcode: paper.bibcode },
+          state: { from: 'library' } as any
+        })
         break
       case 'graph':
         navigate({ to: '/graph/$bibcode', params: { bibcode: paper.bibcode } })

@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   Outlet,
+  ScrollRestoration,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Header } from '@/components/layout/Header'
@@ -46,6 +47,7 @@ function RootLayout() {
             <Outlet />
           </div>
         </main>
+        <ScrollRestoration />
       </div>
     </QueryClientProvider>
   )

@@ -42,9 +42,42 @@ export function LibraryPage() {
     }
   }, [searchParams])
 
-  const [sorting, setSorting] = useState<{ id: string; desc: boolean }[]>([
-    { id: 'added_date', desc: true },
-  ])
+  // Map react-table sorting to API params
+  // Initialize from URL search params if present
+  const [sorting, setSorting] = useState<{ id: string; desc: boolean }[]>(() => {
+    const sortBy = (searchParams as any).sort_by
+    const sortOrder = (searchParams as any).sort_order
+
+    if (sortBy) {
+      // Map API sort keys back to table IDs
+      const id = sortBy === 'created_at' ? 'added_date' : sortBy
+      return [{ id, desc: sortOrder === 'desc' }]
+    }
+
+    // Default
+    return [{ id: 'added_date', desc: true }]
+  })
+
+  // Sync sorting to URL
+  useEffect(() => {
+    const sortState = sorting[0]
+    if (!sortState) return
+
+    const sortBy = sortState.id === 'added_date' ? 'created_at' : sortState.id
+    const sortOrder = sortState.desc ? 'desc' : 'asc'
+
+    // Only update if changed
+    if ((searchParams as any).sort_by !== sortBy || (searchParams as any).sort_order !== sortOrder) {
+      navigate({
+        search: (prev: any) => ({
+          ...prev,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        }),
+        replace: true, // Use replace to avoid cluttering history
+      })
+    }
+  }, [sorting, navigate, searchParams])
 
   // Map react-table sorting to API params
   const sortState = sorting[0]
@@ -114,8 +147,30 @@ export function LibraryPage() {
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
+  // Restore scroll position
+  useEffect(() => {
+    if (!isLoading && papers.length > 0) {
+      const savedScroll = sessionStorage.getItem('library_scroll_y')
+      if (savedScroll) {
+        // Run after a tick to ensure rendering is complete
+        setTimeout(() => {
+          window.scrollTo(0, parseInt(savedScroll))
+          // Optional: clear it if you only want it to apply once
+          // sessionStorage.removeItem('library_scroll_y')
+        }, 0)
+      }
+    }
+  }, [isLoading, papers.length])
+
   const handleRowClick = useCallback((paper: Paper) => {
-    navigate({ to: '/library/$bibcode', params: { bibcode: paper.bibcode } })
+    // Save scroll position
+    sessionStorage.setItem('library_scroll_y', window.scrollY.toString())
+
+    navigate({
+      to: '/library/$bibcode',
+      params: { bibcode: paper.bibcode },
+      state: { from: 'library' } as any
+    })
   }, [navigate])
 
   return (

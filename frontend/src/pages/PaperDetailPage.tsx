@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useLocation, useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -32,6 +32,8 @@ import { api } from '@/lib/api'
 
 export function PaperDetailPage() {
   const navigate = useNavigate()
+  const router = useRouter()
+  const location = useLocation()
   const { bibcode } = useParams({ from: '/library/$bibcode' })
   const { data: paper, isLoading, error } = usePaper(bibcode)
   const { data: note } = useNote(bibcode)
@@ -220,7 +222,13 @@ export function PaperDetailPage() {
     <div className="space-y-6 max-w-4xl">
       {/* Back button */}
       <button
-        onClick={() => navigate({ to: '/library' })}
+        onClick={() => {
+          if ((location.state as any)?.from === 'library') {
+            router.history.back()
+          } else {
+            navigate({ to: '/library' })
+          }
+        }}
         className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
       >
         <Icon icon={ArrowLeft} size={18} />
