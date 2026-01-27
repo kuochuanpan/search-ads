@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useNavigate, useSearch, useLocation } from '@tanstack/react-router'
-import { Plus, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { PaperTable } from '@/components/library/PaperTable'
@@ -149,6 +149,8 @@ export function LibraryPage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // Restore scroll position
+  const hasRestoredScroll = useRef(false)
+
   useEffect(() => {
     // If we have a reset signal, clear storage and don't restore
     if ((location.state as any)?.resetScroll) {
@@ -156,15 +158,16 @@ export function LibraryPage() {
       return
     }
 
-    if (!isLoading && papers.length > 0) {
+    if (!isLoading && papers.length > 0 && !hasRestoredScroll.current) {
       const savedScroll = sessionStorage.getItem('library_scroll_y')
       if (savedScroll) {
         // Run after a tick to ensure rendering is complete
         setTimeout(() => {
           window.scrollTo(0, parseInt(savedScroll))
-          // Optional: clear it if you only want it to apply once
-          // sessionStorage.removeItem('library_scroll_y')
+          hasRestoredScroll.current = true
         }, 0)
+      } else {
+        hasRestoredScroll.current = true
       }
     }
   }, [isLoading, papers.length, location.state])
@@ -197,10 +200,7 @@ export function LibraryPage() {
             <Icon icon={Download} size={16} />
             Import
           </Button>
-          <Button onClick={() => navigate({ to: '/import' })}>
-            <Icon icon={Plus} size={16} />
-            Add Paper
-          </Button>
+
         </div>
       </div>
 
