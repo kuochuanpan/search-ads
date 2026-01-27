@@ -206,6 +206,7 @@ export interface PaperSummary {
   journal?: string
   citation_count?: number
   in_library: boolean
+  abstract?: string
 }
 
 export interface ReferencesResponse {

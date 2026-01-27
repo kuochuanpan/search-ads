@@ -22,6 +22,7 @@ class PaperSummary(BaseModel):
     journal: Optional[str] = None
     citation_count: Optional[int] = None
     in_library: bool = False
+    abstract: Optional[str] = None
 
 
 class ReferencesResponse(BaseModel):
@@ -91,6 +92,7 @@ async def get_references(
                         journal=p.journal,
                         citation_count=p.citation_count,
                         in_library=in_library,
+                        abstract=p.abstract,
                     )
                 )
 
@@ -125,6 +127,7 @@ async def get_references(
                         journal=p.journal,
                         citation_count=p.citation_count,
                         in_library=True,
+                        abstract=p.abstract,
                     )
                 )
             else:
@@ -191,6 +194,7 @@ async def get_citations(
                         journal=p.journal,
                         citation_count=p.citation_count,
                         in_library=in_library,
+                        abstract=p.abstract,
                     )
                 )
 
@@ -225,6 +229,7 @@ async def get_citations(
                         journal=p.journal,
                         citation_count=p.citation_count,
                         in_library=True,
+                        abstract=p.abstract,
                     )
                 )
             else:
