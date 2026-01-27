@@ -1,504 +1,317 @@
 # Search-ADS
 
-A CLI tool for automating scientific paper citations in LaTeX documents using NASA ADS (Astrophysics Data System).
+**AI-powered reference manager for astronomers and astrophysicists.**
 
-## Status
+Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search, LLM-powered analysis, and citation graph exploration to make managing your research library effortless.
 
-**Version**: 0.1.0 (Alpha)
+**Version: 0.1 beta**
 
-| Phase | Status |
-|-------|--------|
-| Phase 1: Core CLI | ✅ Complete |
-| Phase 2: Vector Search & LLM Ranking | ✅ Complete |
-| Phase 3: PDF Handling | ✅ Complete |
-| Phase 4: Web UI | 🚧 In Progress |
+## Screenshots
+
+**Web UI - Library View**
+![Web UI Library](docs/screenshots/webui-1.png)
+
+**Web UI - Search**
+![Web UI Search](docs/screenshots/webui-2.png)
+
+**CLI - Search & Results**
+![CLI Search](docs/screenshots/cli-1.png)
+
+**CLI - Paper Details**
+![CLI Details](docs/screenshots/cli-2.png)
 
 ## Features
 
-- **Search for papers** using NASA ADS API with LLM-powered context analysis
-- **Semantic search** over your local paper database using vector embeddings (ChromaDB)
-- **Automatically fill** empty `\cite{}`, `\citep{}`, `\citet{}` in LaTeX files
-- **Build and maintain** a local paper database with SQLite
-- **Expand citation graphs** by fetching references and citations
-- **PDF support** - download, parse, and search through paper PDFs
-- **LLM ranking** - intelligently rank papers by relevance using Claude or OpenAI
-- **Project organization** - tag papers across multiple projects
-- **Generate BibTeX and AASTeX bibitem entries** automatically
+- **AI-Powered Search** - Find papers using natural language queries, not just keywords
+- **Semantic Search** - Search your library by meaning using vector embeddings
+- **Citation Graph** - Explore references and citations to discover related work
+- **PDF Management** - Download, store, and search through paper PDFs
+- **LLM Ranking** - Intelligently rank papers by relevance using Claude or OpenAI
+- **LaTeX Integration** - Auto-fill `\cite{}`, `\citep{}`, `\citet{}` commands
+- **BibTeX & AASTeX** - Generate bibliography entries automatically
+- **Project Organization** - Tag papers across multiple research projects
+- **Web UI & CLI** - Use whichever interface suits your workflow
 
-## Architecture
+## Quick Start
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  User Interfaces                        │
-│  ┌─────────────────────┐  ┌──────────────────────────┐  │
-│  │   CLI (Typer)       │  │   Web UI (React)         │  │
-│  │ seed, find, get...  │  │ Library, Search, Graph   │  │
-│  └──────────┬──────────┘  └────────────┬─────────────┘  │
-└─────────────┼──────────────────────────┼────────────────┘
-              │                          │
-              │              ┌───────────▼───────────┐
-              │              │  FastAPI Backend      │
-              │              │  /api/papers, search  │
-              │              └───────────┬───────────┘
-              │                          │
-              └────────────┬─────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-┌───────▼──┐ ┌─────────────▼──┐ ┌─────────────▼──┐
-│  LaTeX   │ │ Citation       │ │   PDF          │
-│  Parser  │ │ Engine         │ │   Handler      │
-└────┬─────┘ └───────┬────────┘ └───────┬────────┘
-     │               │                  │
-     └───────────────┼──────────────────┘
-                ┌────▼────────┐
-                │ LLM Client  │  (Claude/OpenAI)
-                └─────┬───────┘
-                      │
-        ┌─────────────┼─────────────┐
-        │             │             │
-┌───────▼──┐ ┌───────▼────────┐    │
-│  ADS API │ │  Repository    │    │
-│  Client  │ │  (CRUD Ops)    │    │
-└──────────┘ └───────┬────────┘    │
-                     │             │
-              ┌──────▼─────────────▼┐
-              │   Database Layer    │
-              │  SQLite + ChromaDB  │
-              └─────────────────────┘
-```
+### One-Line Installation (Recommended)
 
-## Installation
-
-### Using pipx (Recommended)
-
-[pipx](https://pipx.pypa.io/) installs CLI tools in isolated environments. This is the recommended way to install search-ads.
+If you want both the CLI and Web UI:
 
 ```bash
-# Install pipx if you don't have it
-# macOS
-brew install pipx
-pipx ensurepath
+# Requires: git, pipx, npm
+curl -fsSL https://raw.githubusercontent.com/kuochuanpan/search-ads/main/install.sh | bash
+```
 
-# Linux/WSL
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
+This will:
+- Clone the repository to `~/search-ads`
+- Install the CLI tool via pipx
+- Install frontend dependencies
+- Initialize configuration
 
-# Then install search-ads directly from GitHub
+After installation, configure your API keys and launch:
+
+```bash
+# Edit API keys
+nano ~/.search-ads/.env
+
+# Launch the application
+cd ~/search-ads && ./launch.sh
+```
+
+### CLI-Only Installation
+
+If you only need the command-line tool:
+
+```bash
+# Using pipx (recommended)
 pipx install git+https://github.com/kuochuanpan/search-ads.git
-```
 
-To upgrade to the latest version:
-```bash
-pipx upgrade search-ads
-```
-
-To uninstall:
-```bash
-pipx uninstall search-ads
-```
-
-### Using pip
-
-```bash
-# Install directly from GitHub
+# Or using pip
 pip install git+https://github.com/kuochuanpan/search-ads.git
-
-# Or clone and install locally
-git clone https://github.com/kuochuanpan/search-ads.git
-cd search-ads
-pip install .
 ```
 
-### For Development
-
-```bash
-git clone https://github.com/kuochuanpan/search-ads.git
-cd search-ads
-pip install -e ".[dev]"
-```
-
-### Web UI Installation
-
-The Web UI consists of a FastAPI backend and a React frontend. The backend is included with the main package installation. To run the full Web UI:
-
-#### Prerequisites
-
-- Python 3.10+ (for backend)
-- Node.js 18+ and npm (for frontend)
-
-#### Backend Setup
-
-The backend dependencies are already included when you install search-ads. No additional installation is needed.
-
-**Start the backend server:**
-
-```bash
-# From the project root directory
-uvicorn src.web.main:app --reload --port 9527
-```
-
-The API will be available at `http://localhost:9527` with interactive docs at `http://localhost:9527/docs`.
-
-#### Frontend Setup
-
-```bash
-# Navigate to the frontend directory
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
-```
-
-The frontend will be available at `http://localhost:5173`.
-
-#### Running Both (Development)
-
-For development, run both servers simultaneously in separate terminals:
-
-```bash
-# Terminal 1 - Backend
-uvicorn src.web.main:app --reload --port 9527
-
-# Terminal 2 - Frontend
-cd frontend && npm run dev
-```
-
-#### Production Build
-
-To build the frontend for production:
-
-```bash
-cd frontend
-npm run build
-```
-
-The built files will be in `frontend/dist/` and can be served by any static file server.
-
-### Dependencies
-
-All dependencies are automatically installed. Key dependencies include:
-
-- `typer` & `rich` - CLI interface
-- `sqlmodel` - Database ORM
-- `ads` - NASA ADS API client
-- `chromadb` - Vector database for semantic search
-- `openai` / `anthropic` - LLM APIs for context analysis
-- `pymupdf` - PDF parsing
-
-## Configuration
-
-After installation, run the init command to create the configuration file:
+Then initialize:
 
 ```bash
 search-ads init
 ```
 
-This creates `~/.search-ads/.env` with a template. Edit it to add your API keys:
+### Configuration
 
-```bash
-# Open the config file
-nano ~/.search-ads/.env
-# or
-code ~/.search-ads/.env
-```
-
-Required and optional API keys:
+Add your API keys to `~/.search-ads/.env`:
 
 ```env
-# Required - NASA ADS API key
-ADS_API_KEY=your_ads_api_key_here
+# Required
+ADS_API_KEY=your_ads_api_key
 
-# Recommended - For embeddings and LLM analysis
-OPENAI_API_KEY=your_openai_api_key_here
+# Recommended (for AI features)
+OPENAI_API_KEY=your_openai_api_key
 
-# Optional - Alternative LLM backend (preferred when available)
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# Optional (preferred for LLM analysis)
+ANTHROPIC_API_KEY=your_anthropic_api_key
 
-# Optional - Auto-detect your papers by author name (semicolon-separated)
-MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
+# Optional (for "My Papers" feature)
+MY_AUTHOR_NAMES="Smith, J.; Smith, John"
+
+# Optional (customize LLM models)
+OPENAI_MODEL="gpt-4o-mini"
+ANTHROPIC_MODEL="claude-3-haiku-20240307"
 ```
 
-**Tip**: You can also edit your author names in the Web UI by clicking the user icon in the top right corner.
+**Get your API keys:**
+- ADS: [ui.adsabs.harvard.edu/user/settings/token](https://ui.adsabs.harvard.edu/user/settings/token)
+- OpenAI: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- Anthropic: [console.anthropic.com](https://console.anthropic.com/)
 
-Get your API keys:
+### Upgrading
 
-- **ADS API key**: [ui.adsabs.harvard.edu/user/settings/token](https://ui.adsabs.harvard.edu/user/settings/token)
-- **OpenAI API key**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-- **Anthropic API key**: [console.anthropic.com](https://console.anthropic.com/)
+**Full installation:**
+```bash
+cd ~/search-ads
+./install.sh  # Select 'n' when asked to overwrite to update
+```
+
+**CLI only:**
+```bash
+pipx upgrade search-ads
+```
 
 ## Usage
 
-### Seed the database with papers
+### Add Papers to Your Library
 
 ```bash
-# Seed a single paper by URL or bibcode
-search-ads seed "https://ui.adsabs.harvard.edu/abs/2023ApJ...XXX/abstract"
-search-ads seed 2023ApJ...XXX
+# Add a paper by ADS URL or bibcode
+search-ads seed "https://ui.adsabs.harvard.edu/abs/2021Natur.589...29B"
+search-ads seed 2021Natur.589...29B
 
-# Seed with automatic expansion (fetch references and citations)
-search-ads seed 2023ApJ...XXX --expand --hops 2
+# Add with references and citations
+search-ads seed 2021Natur.589...29B --expand --hops 1
 
-# Seed and add to a project
-search-ads seed 2023ApJ...XXX --expand --project "my-paper-2024"
+# Add to a project
+search-ads seed 2021Natur.589...29B --project "my-paper"
 ```
 
-### Search for papers
+### Search for Papers
 
 ```bash
-# Search using LLM-powered analysis (recommended)
-search-ads find --context "Core-collapse supernovae are the primary mechanism for neutron star formation" --top-k 5
+# AI-powered search (recommended)
+search-ads find --context "Core-collapse supernovae are the primary source of neutron stars"
 
-# Search local database only (faster, no ADS API calls)
-search-ads find --context "dark matter halo mass function" --local --top-k 5
+# Search local library only (faster)
+search-ads find --context "dark matter halo mass function" --local
 
-# Search without LLM analysis (basic keyword matching)
-search-ads find --context "gravitational waves" --no-llm --top-k 5
+# Basic keyword search
+search-ads find --context "gravitational waves" --no-llm
 ```
 
-### Show paper details
+### Get Citation Information
 
 ```bash
-# Show detailed information about a paper
-search-ads show 2023ApJ...XXX
+# Get BibTeX and citation key
+search-ads get 2021Natur.589...29B
 
-# Fetch from ADS if not in local database
-search-ads show 2023ApJ...XXX --fetch
+# Get specific format
+search-ads get 2021Natur.589...29B --format bibtex
+search-ads get 2021Natur.589...29B --format bibitem
 ```
 
-### Get citation information
+### Manage Your Library
 
 ```bash
-# Get citation info for a paper (cite key, bibitem, bibtex)
-search-ads get 2023ApJ...XXX
-
-# Get only bibtex entry
-search-ads get 2023ApJ...XXX --format bibtex
-
-# Get only bibitem (aastex format)
-search-ads get 2023ApJ...XXX --format bibitem
-
-# Fetch from ADS if not in local database
-search-ads get 2023ApJ...XXX --fetch
-```
-
-The `get` command returns the citation key (bibcode), bibitem in AASTeX format, and BibTeX entry as plain text. This is designed for use with Claude Code - the skill handles inserting citations into your LaTeX files.
-
-### Fill citations in LaTeX files
-
-```bash
-# Fill a citation at a specific location
-search-ads fill --tex-file paper.tex --line 42 --column 10 --bibcode 2023ApJ...XXX
-```
-
-### Database management
-
-```bash
-# View overall status (database + API usage)
+# View library status
 search-ads status
 
-# List papers in database
+# List papers
 search-ads list-papers --limit 20
 
-# Embed all papers for semantic search
+# Embed papers for semantic search
 search-ads db embed
 
-# Show database statistics
-search-ads db status
-
-# Update citation counts (batch update, efficient API usage)
+# Update citation counts
 search-ads db update
-
-# Update papers in a specific project
-search-ads db update --project "my-paper-2024"
-
-# Update papers not updated in the last N days
-search-ads db update --older-than 30
 ```
 
-### PDF features
+### Work with PDFs
 
 ```bash
 # Download a paper's PDF
-search-ads pdf download <bibcode>
+search-ads pdf download 2021Natur.589...29B
 
-# Embed PDF for full-text search
-search-ads pdf embed <bibcode>
-
-# Search through embedded PDFs
-search-ads pdf search "query text" --top-k 5
-
-# Show PDF storage status
-search-ads pdf status
-
-# List downloaded PDFs
-search-ads pdf list
+# Search through PDFs
+search-ads pdf search "simulation methodology" --top-k 5
 ```
 
-### Project management
-
-Papers can belong to multiple projects (like tags). This allows you to organize your research across different papers and topics.
+### Organize with Projects
 
 ```bash
-# Initialize a project to organize papers
-search-ads project init "my-paper-2024"
+# Create a project
+search-ads project init "agn-feedback"
 
-# Seed papers and add them to a project (including expanded refs/citations)
-search-ads seed 2023ApJ...XXX --expand --hops 2 --project "my-paper-2024"
-
-# Add an existing paper to a project
-search-ads project add-paper <bibcode> --project "my-paper-2024"
-
-# Add same paper to multiple projects
-search-ads project add-paper <bibcode> --project "ccsn"
-search-ads project add-paper <bibcode> --project "neutrinos"
-
-# List all projects
+# List projects
 search-ads project list
 
-# List papers in a project
-search-ads project list "my-paper-2024"
-
-# Delete a project (papers remain in database)
-search-ads project delete "old-project"
+# Add paper to project
+search-ads project add-paper 2021Natur.589...29B --project "agn-feedback"
 ```
 
-### Expand citation graph
+## Web UI
+
+Search-ADS includes a modern web interface for visual library management.
+
+### Starting the Web UI
+
+**If installed via install.sh:**
 
 ```bash
-# Expand references and citations for a paper
-search-ads expand 2023ApJ...XXX --hops 1
+cd ~/search-ads
+./launch.sh
 ```
+
+This starts both backend and frontend. Press `Ctrl+C` to stop.
+
+**Manual Start (for development):**
+
+```bash
+# Terminal 1 - Backend
+search-ads web
+# or: uvicorn src.web.main:app --reload --port 9527
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
+```
+
+Access the UI at `http://localhost:5173`
+
+### Web UI Features
+
+| View | Description |
+|------|-------------|
+| **Dashboard** | Overview with stats, recent papers, and recommendations |
+| **Library** | Full paper table with sorting, filtering, and bulk actions |
+| **Search** | AI-powered search across your library and ADS |
+| **Writing** | Paste LaTeX text and get citation suggestions |
+| **Import** | Add papers from ADS URLs, BibTeX files, or clipboard |
+| **Settings** | API keys, preferences, and database management |
 
 ## Claude Code Integration
 
-This tool includes a Claude Code skill for automated citation workflow. The skill is located at `.claude/skills/search-cite.md`.
+Search-ADS includes a skill for [Claude Code](https://claude.ai/claude-code) to help automate citations in your LaTeX documents.
 
-To use it globally (in any project):
+Copy the skill to your global Claude skills directory:
 
 ```bash
-# Copy to your global Claude skills directory
 cp .claude/skills/search-cite.md ~/.claude/skills/
 ```
 
 Then Claude Code can help you:
-
 - Find empty citations in LaTeX files
 - Search for relevant papers based on context
 - Fill citations automatically
 - Manage bibliography entries
 
-## Example Workflow
-
-1. **Create a project** for your paper:
-
-   ```bash
-   search-ads project init "my-ccsn-paper"
-   ```
-
-2. **Seed your database** with papers from your research area (all refs/citations added to project):
-
-   ```bash
-   search-ads seed 2021Natur.589...29B --expand --hops 1 --project "my-ccsn-paper"
-   ```
-
-3. **Embed papers** for semantic search:
-
-   ```bash
-   search-ads db embed
-   ```
-
-4. **Find relevant papers** for your LaTeX document:
-
-   ```bash
-   search-ads find --context "Core-collapse supernovae are the primary mechanism for neutron star formation" --top-k 5
-   ```
-
-5. **Get citation information** for the paper you want to cite:
-
-   ```bash
-   search-ads get 2021Natur.589...29B
-   ```
-
-   This outputs the cite key (bibcode), bibitem (aastex format), and bibtex entry as plain text. Use Claude Code skill to insert into your LaTeX file.
-
-6. **Keep database updated** (citation counts change over time):
-
-   ```bash
-   search-ads db update --project "my-ccsn-paper"
-   ```
-
 ## Data Storage
 
-By default, data is stored in `~/.search-ads/`:
+All data is stored locally in `~/.search-ads/`:
 
-- `papers.db` - SQLite database with paper metadata
-- `chroma/` - Vector embeddings for semantic search
-- `pdfs/` - Downloaded PDF files
+```
+~/.search-ads/
+├── .env          # API keys and configuration
+├── papers.db     # SQLite database
+├── chroma/       # Vector embeddings
+└── pdfs/         # Downloaded PDFs
+```
 
 ## Command Reference
 
 | Command | Description |
 |---------|-------------|
-| `seed <bibcode>` | Add paper to database from ADS |
-| `find --context "..."` | Search for papers matching context |
-| `get <bibcode>` | Get citation info (key, bibitem, bibtex) |
+| `init` | Initialize configuration |
+| `seed <bibcode>` | Add paper from ADS |
+| `find --context "..."` | Search for papers |
+| `get <bibcode>` | Get citation info |
 | `show <bibcode>` | Display paper details |
-| `fill` | Fill citation in LaTeX file |
 | `expand <bibcode>` | Expand citation graph |
-| `status` | Show database and API usage stats |
-| `list-papers` | List papers in database |
-| `mine` | Mark/unmark/list your own papers |
-| `import` | Import from BibTeX file |
-| `db embed` | Embed papers for semantic search |
+| `status` | Show database stats |
+| `list-papers` | List library papers |
+| `mine` | Manage your own papers |
+| `import --bib-file` | Import from BibTeX |
+| `db embed` | Embed for semantic search |
 | `db update` | Update citation counts |
-| `db status` | Show database statistics |
-| `db clear` | Clear database |
-| `pdf download` | Download paper PDF |
-| `pdf embed` | Embed PDF for search |
+| `pdf download` | Download PDF |
 | `pdf search` | Search PDF contents |
-| `pdf status` | Show PDF storage stats |
-| `pdf list` | List downloaded PDFs |
-| `project init` | Create a new project |
-| `project list` | List projects or papers in project |
-| `project add-paper` | Add paper to project |
-| `project delete` | Delete a project |
+| `project init` | Create project |
+| `project list` | List projects |
 
-## Web UI
+Run `search-ads --help` for full documentation.
 
-The Web UI provides a graphical interface for managing your paper library. See [Web UI Installation](#web-ui-installation) for setup instructions.
+## Requirements
 
-### Views
+**For CLI only:**
+- Python 3.10+
+- pipx (recommended) or pip
+- NASA ADS API key (free)
 
-| View | Description |
-| ---- | ----------- |
-| Dashboard | Overview with stats, recent papers, and recommendations |
-| Library | Full paper table with sorting, filtering, and bulk actions |
-| Search | AI-powered semantic search across library and ADS |
-| Graph | Interactive citation network visualization |
-| Writing | Paste LaTeX text and get citation suggestions |
-| Import | Import from ADS URLs, BibTeX files, or clipboard |
-| Settings | API keys, preferences, and database management |
+**For full installation (CLI + Web UI):**
+- All of the above, plus:
+- Node.js 18+ and npm
+- git
 
-### API Endpoints
+**Optional (for AI features):**
+- OpenAI API key (for embeddings and search)
+- Anthropic API key (for LLM analysis)
 
-The backend exposes a RESTful API at `http://localhost:9527/api/`:
+## Contributing
 
-| Endpoint | Description |
-| -------- | ----------- |
-| `/api/papers` | Paper CRUD operations |
-| `/api/projects` | Project management |
-| `/api/search` | Semantic and local search |
-| `/api/notes` | Paper notes management |
-| `/api/pdf` | PDF download and embedding |
-| `/api/import` | Import from various sources |
-| `/api/settings` | Configuration management |
-
-Interactive API documentation is available at `http://localhost:9527/docs`.
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [NASA ADS](https://ui.adsabs.harvard.edu/) for the paper database
+- [ChromaDB](https://www.trychroma.com/) for vector storage
+- [Anthropic](https://anthropic.com/) and [OpenAI](https://openai.com/) for LLM APIs
