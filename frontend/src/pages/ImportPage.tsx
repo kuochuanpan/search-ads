@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, Upload, Clipboard, RefreshCw, Check, AlertCircle } from 'lucide-react'
+import { Link, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
@@ -34,21 +34,9 @@ export function ImportPage() {
     logs: Array<{ type: 'success' | 'info' | 'error'; message: string }>
   } | null>(null)
 
-  // Batch Import
-  const [batchText, setBatchText] = useState('')
-  const [batchLoading, setBatchLoading] = useState(false)
-  const [batchResult, setBatchResult] = useState<{ success: boolean; imported: number; failed: number } | null>(null)
-  const [importProgress, setImportProgress] = useState<{
-    current: number
-    total: number
-    message: string
-    logs: Array<{ type: 'success' | 'error'; message: string }>
-  } | null>(null)
 
-  // BibTeX Import
-  const [bibtexContent, setBibtexContent] = useState('')
-  const [bibtexLoading, setBibtexLoading] = useState(false)
-  const [bibtexResult, setBibtexResult] = useState<{ success: boolean; imported: number; failed: number } | null>(null)
+
+
 
   const handleAdsImport = async () => {
     if (!adsUrl.trim()) return
@@ -89,77 +77,16 @@ export function ImportPage() {
     }
   }
 
-  const handleBatchImport = async () => {
-    const identifiers = batchText.split('\n').map(s => s.trim()).filter(Boolean)
-    if (identifiers.length === 0) return
-    setBatchLoading(true)
-    setBatchResult(null)
-    setImportProgress({ current: 0, total: identifiers.length, message: 'Starting...', logs: [] })
 
-    try {
-      for await (const event of api.streamBatchImport(identifiers, selectedProject || undefined)) {
-        if (event.type === 'progress') {
-          setImportProgress(prev => prev ? ({
-            ...prev,
-            current: event.current || prev.current,
-            total: event.total || prev.total,
-            message: event.message || prev.message
-          }) : null)
-        } else if (event.type === 'log') {
-          setImportProgress(prev => prev ? ({
-            ...prev,
-            logs: [...prev.logs, { type: event.level === 'error' ? 'error' : 'success', message: event.message || '' }]
-          }) : null)
-        } else if (event.type === 'result' && event.data) {
-          setBatchResult(event.data)
-          if (event.data.success) {
-            setBatchText('')
-            // Invalidate queries to refresh library view
-            queryClient.invalidateQueries({ queryKey: ['papers'] })
-            queryClient.invalidateQueries({ queryKey: ['stats'] })
-            queryClient.invalidateQueries({ queryKey: ['projects'] })
-          }
-          // Keep progress visible for a moment or let user dismiss? 
-          // We'll leave it to show logs until user starts new action or we can clear it.
-        }
-      }
-    } catch (e: any) {
-      setBatchResult({ success: false, imported: 0, failed: identifiers.length })
-      setImportProgress(prev => prev ? ({
-        ...prev,
-        logs: [...prev.logs, { type: 'error', message: e.message || 'Import failed' }]
-      }) : null)
-    } finally {
-      setBatchLoading(false)
-    }
-  }
 
-  const handleBibtexImport = async () => {
-    if (!bibtexContent.trim()) return
-    setBibtexLoading(true)
-    setBibtexResult(null)
-    try {
-      const result = await api.importBibtex(bibtexContent, selectedProject || undefined)
-      setBibtexResult({ success: result.success, imported: result.imported, failed: result.failed })
-      if (result.success) {
-        setBibtexContent('')
-        queryClient.invalidateQueries({ queryKey: ['papers'] })
-        queryClient.invalidateQueries({ queryKey: ['stats'] })
-        queryClient.invalidateQueries({ queryKey: ['projects'] })
-      }
-    } catch (e: any) {
-      setBibtexResult({ success: false, imported: 0, failed: 0 })
-    } finally {
-      setBibtexLoading(false)
-    }
-  }
+
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="text-center py-8">
         <h1 className="text-2xl font-semibold mb-2">Import Papers</h1>
         <p className="text-muted-foreground">
-          Add papers to your library from ADS, BibTeX, or by identifier
+          Add papers to your library from ADS
         </p>
       </div>
 
@@ -259,105 +186,7 @@ export function ImportPage() {
         )}
       </Card>
 
-      {/* From Clipboard */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Icon icon={Clipboard} size={20} className="text-primary" />
-          <h3 className="font-medium">From Clipboard (DOI/arXiv/Bibcode)</h3>
-        </div>
 
-        <textarea
-          value={batchText}
-          onChange={(e) => setBatchText(e.target.value)}
-          placeholder={`Paste DOIs, arXiv IDs, or bibcodes (one per line):
-10.1088/0004-637X/996/1/35
-2301.12345
-2024MNRAS.528.1234J`}
-          className="w-full h-32 p-3 border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring font-mono text-sm"
-        />
-
-        <Button
-          className="w-full mt-4"
-          onClick={handleBatchImport}
-          disabled={batchLoading || !batchText.trim()}
-        >
-          {batchLoading ? 'Importing...' : `Import ${batchText.split('\n').filter(s => s.trim()).length} Papers`}
-        </Button>
-
-        {importProgress && (
-          <div className="mt-4 space-y-2">
-            <div className="flex justify-between text-sm mb-1">
-              <span>{importProgress.message}</span>
-              <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
-            </div>
-            <div className="w-full bg-secondary rounded-full h-2.5 dark:bg-gray-700">
-              <div
-                className="bg-primary h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-              ></div>
-            </div>
-
-            {/* Logs area */}
-            <div className="mt-2 max-h-32 overflow-y-auto text-xs space-y-1 p-2 bg-secondary/30 rounded border">
-              {importProgress.logs.map((log, i) => (
-                <div key={i} className={log.type === 'error' ? 'text-red-500' : 'text-green-600 dark:text-green-400'}>
-                  {log.message}
-                </div>
-              ))}
-              {importProgress.logs.length === 0 && <div className="text-muted-foreground italic">Logs will appear here...</div>}
-            </div>
-          </div>
-        )}
-
-        {batchResult && !batchLoading && (
-          <div className={`mt-3 p-3 rounded flex items-center gap-2 ${batchResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`}>
-            <Icon icon={batchResult.success ? Check : AlertCircle} size={16} />
-            Imported {batchResult.imported} papers{batchResult.failed > 0 && `, ${batchResult.failed} failed`}
-          </div>
-        )}
-      </Card>
-
-      {/* From BibTeX */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Icon icon={Upload} size={20} className="text-primary" />
-          <h3 className="font-medium">From BibTeX</h3>
-        </div>
-
-        <textarea
-          value={bibtexContent}
-          onChange={(e) => setBibtexContent(e.target.value)}
-          placeholder={`Paste BibTeX content or drag & drop a .bib file:
-
-@article{2024ApJ...996...35P,
-  author = {Pan, Z. and others},
-  title = {A Great Paper},
-  journal = {ApJ},
-  year = {2024}
-}`}
-          className="w-full h-40 p-3 border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring font-mono text-sm"
-        />
-
-        <div className="flex items-center gap-2 mt-3">
-          <input type="checkbox" id="fetchAds" defaultChecked className="rounded" />
-          <label htmlFor="fetchAds" className="text-sm">Fetch full metadata from ADS</label>
-        </div>
-
-        <Button
-          className="w-full mt-4"
-          onClick={handleBibtexImport}
-          disabled={bibtexLoading || !bibtexContent.trim()}
-        >
-          {bibtexLoading ? 'Importing...' : 'Import'}
-        </Button>
-
-        {bibtexResult && (
-          <div className={`mt-3 p-3 rounded flex items-center gap-2 ${bibtexResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`}>
-            <Icon icon={bibtexResult.success ? Check : AlertCircle} size={16} />
-            Imported {bibtexResult.imported} papers{bibtexResult.failed > 0 && `, ${bibtexResult.failed} failed`}
-          </div>
-        )}
-      </Card>
 
       {/* Zotero Sync */}
       <Card className="p-6 opacity-60">
