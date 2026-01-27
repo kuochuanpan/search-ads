@@ -147,6 +147,55 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      {/* AI Models */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon icon={Database} size={20} className="text-primary" />
+          <h2 className="font-medium">AI Models</h2>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="font-medium block mb-1 text-sm">OpenAI Model</label>
+            <div className="flex gap-2">
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                value={settings?.openai_model || 'gpt-4o-mini'}
+                onChange={(e) => {
+                  if (settings) {
+                    api.updateModels(e.target.value, settings.anthropic_model).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ['settings'] })
+                    })
+                  }
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Recommended: <code>gpt-4o-mini</code> for speed, <code>gpt-4o</code> for quality.
+            </p>
+          </div>
+
+          <div>
+            <label className="font-medium block mb-1 text-sm">Anthropic Model</label>
+            <div className="flex gap-2">
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                value={settings?.anthropic_model || 'claude-3-haiku-20240307'}
+                onChange={(e) => {
+                  if (settings) {
+                    api.updateModels(settings.openai_model, e.target.value).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ['settings'] })
+                    })
+                  }
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Recommended: <code>claude-3-haiku-20240307</code> for speed, <code>claude-3-5-sonnet-20240620</code> for quality.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       {/* API Keys */}
       <Card className="p-6">
         <div className="flex items-center gap-2 mb-4">

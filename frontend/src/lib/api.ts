@@ -83,6 +83,8 @@ export interface SettingsResponse {
   has_ads_key: boolean
   has_openai_key: boolean
   has_anthropic_key: boolean
+  openai_model: string
+  anthropic_model: string
   my_author_names: string
 }
 
@@ -678,6 +680,12 @@ export const api = {
     request<{ message: string; success: boolean }>('/settings/author-names', {
       method: 'PUT',
       body: JSON.stringify({ author_names: authorNames }),
+    }),
+
+  updateModels: (openai_model: string, anthropic_model: string) =>
+    request<{ message: string; success: boolean }>('/settings/models', {
+      method: 'PUT',
+      body: JSON.stringify({ openai_model, anthropic_model }),
     }),
 
   // AI-powered Search

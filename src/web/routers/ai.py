@@ -117,6 +117,11 @@ async def ai_search(
                 min_citations=request.min_citations,
             )
 
+            # Batch fetch papers
+            bibcodes_to_fetch = [r["bibcode"] for r in semantic_results]
+            papers = paper_repo.get_batch(bibcodes_to_fetch)
+            paper_map = {p.bibcode: p for p in papers}
+
             for result in semantic_results:
                 bibcode = result["bibcode"]
                 distance = result["distance"]
@@ -125,7 +130,7 @@ async def ai_search(
                 seen_bibcodes.add(bibcode)
 
                 # Get full paper details
-                paper = paper_repo.get(bibcode)
+                paper = paper_map.get(bibcode)
                 if paper:
                     # Parse authors if JSON
                     authors = None
@@ -164,13 +169,18 @@ async def ai_search(
 
             ads_papers = ads_client.search(search_query, limit=request.limit, save=False)
 
+            # Batch fetch local papers to check status
+            bibcodes_to_fetch = [p.bibcode for p in ads_papers]
+            local_papers = paper_repo.get_batch(bibcodes_to_fetch)
+            local_map = {p.bibcode: p for p in local_papers}
+
             for paper in ads_papers:
                 if paper.bibcode in seen_bibcodes:
                     continue
                 seen_bibcodes.add(paper.bibcode)
 
                 # Check if in library
-                local_paper = paper_repo.get(paper.bibcode)
+                local_paper = local_map.get(paper.bibcode)
                 in_library = local_paper is not None
 
                 # Parse authors if JSON
@@ -208,6 +218,11 @@ async def ai_search(
                 n_results=request.limit,
             )
 
+            # Batch fetch papers
+            bibcodes_to_fetch = [r["bibcode"] for r in pdf_results]
+            papers = paper_repo.get_batch(bibcodes_to_fetch)
+            paper_map = {p.bibcode: p for p in papers}
+
             for result in pdf_results:
                 bibcode = result["bibcode"]
                 distance = result["distance"]
@@ -216,7 +231,7 @@ async def ai_search(
                     continue
                 seen_bibcodes.add(bibcode)
 
-                paper = paper_repo.get(bibcode)
+                paper = paper_map.get(bibcode)
                 if paper:
                     # Parse authors if JSON
                     authors = None
@@ -321,21 +336,20 @@ async def ai_search_stream(
     vector_store=Depends(get_vector_store_dep),
 ):
     """AI-powered search with streaming progress."""
+    import time
     
     async def event_generator():
         results: List[SearchResultItem] = []
         ai_analysis = None
         seen_bibcodes = set()
         
+        t_total_start = time.time()
+        
         # Step 1: Analyze query
         if request.use_llm and llm_client:
             yield json.dumps({"type": "progress", "message": "Analyzing query with AI..."}) + "\n"
+            t_start = time.time()
             try:
-                # We can't await inside a non-async generator easily if using sync clients, 
-                # but these clients seem synchronous. We should run them in threadpool if they block.
-                # Assuming they are fast enough or we accept blocking.
-                # Ideally, we'd use run_in_executor for blocking calls.
-                
                 context_analysis = await asyncio.to_thread(llm_client.analyze_context, request.query)
                 ai_analysis = AIAnalysis(
                     topic=context_analysis.topic,
@@ -344,6 +358,9 @@ async def ai_search_stream(
                     keywords=context_analysis.keywords,
                     reasoning=context_analysis.reasoning,
                 )
+                duration = time.time() - t_start
+                yield json.dumps({"type": "log", "level": "info", "message": f"Query analysis took {duration:.2f}s"}) + "\n"
+                
                 yield json.dumps({
                     "type": "analysis", 
                     "data": ai_analysis.model_dump()
@@ -354,16 +371,25 @@ async def ai_search_stream(
         # Step 2: Library Search
         if request.search_library and vector_store:
             yield json.dumps({"type": "progress", "message": "Searching local library..."}) + "\n"
+            t_start = time.time()
             try:
-                semantic_results = vector_store.search(
+                # Run vector search in thread to verify if it blocks
+                semantic_results = await asyncio.to_thread(
+                    vector_store.search,
                     request.query,
                     n_results=request.limit,
                     min_year=request.min_year,
                     min_citations=request.min_citations,
                 )
                 
+                # Batch fetch papers
+                bibcodes_to_fetch = [r["bibcode"] for r in semantic_results]
+                papers = paper_repo.get_batch(bibcodes_to_fetch)
+                paper_map = {p.bibcode: p for p in papers}
+
                 # Yield intermediate count
-                yield json.dumps({"type": "log", "level": "info", "message": f"Found {len(semantic_results)} matches in library"}) + "\n"
+                duration = time.time() - t_start
+                yield json.dumps({"type": "log", "level": "info", "message": f"Library search found {len(semantic_results)} matches in {duration:.2f}s"}) + "\n"
 
                 for result in semantic_results:
                     bibcode = result["bibcode"]
@@ -372,7 +398,7 @@ async def ai_search_stream(
                         continue
                     seen_bibcodes.add(bibcode)
 
-                    paper = paper_repo.get(bibcode)
+                    paper = paper_map.get(bibcode)
                     if paper:
                         authors = None
                         if paper.authors:
@@ -404,6 +430,7 @@ async def ai_search_stream(
         # Step 3: ADS Search
         if request.search_ads and ads_client:
             yield json.dumps({"type": "progress", "message": "Searching NASA ADS..."}) + "\n"
+            t_start = time.time()
             try:
                 search_query = request.query
                 if ai_analysis and ai_analysis.keywords:
@@ -412,17 +439,20 @@ async def ai_search_stream(
                 # Check cache/perform search
                 ads_papers = await asyncio.to_thread(ads_client.search, search_query, limit=request.limit, save=False)
                 
-                yield json.dumps({"type": "log", "level": "info", "message": f"Found {len(ads_papers)} matches in ADS"}) + "\n"
+                # Batch fetch local papers
+                bibcodes_to_fetch = [p.bibcode for p in ads_papers]
+                local_papers = paper_repo.get_batch(bibcodes_to_fetch)
+                local_map = {p.bibcode: p for p in local_papers}
+
+                duration = time.time() - t_start
+                yield json.dumps({"type": "log", "level": "info", "message": f"ADS search found {len(ads_papers)} matches in {duration:.2f}s"}) + "\n"
 
                 for paper in ads_papers:
                     if paper.bibcode in seen_bibcodes:
                         continue
                     seen_bibcodes.add(paper.bibcode)
 
-                    try:
-                        local_paper = paper_repo.get(paper.bibcode)
-                    except:
-                        local_paper = None
+                    local_paper = local_map.get(paper.bibcode)
                     in_library = local_paper is not None
 
                     authors = None
@@ -452,14 +482,72 @@ async def ai_search_stream(
             except Exception as e:
                 yield json.dumps({"type": "log", "level": "error", "message": f"ADS search failed: {e}"}) + "\n"
 
-        # Step 4: Search PDF (Skipping for brevity logic, same pattern)
+        # Step 4: Search PDF
         if request.search_pdf and vector_store:
              yield json.dumps({"type": "progress", "message": "Searching PDF contents..."}) + "\n"
-             # ... (logic similar to main function)
+             t_start = time.time()
+             # ... (simplified for minimal change, just log timing if it ran)
+             # But let's assume it's disabled by default in UI for now, or just leave as is. 
+             # Wait, I didn't replace Step 4 content in my previous tool call. 
+             # I should probably wrap it if I want to time it.
+             # For now I will leave step 4 as is or just log if I can.
+             # Actually I'm replacing the whole function, so I need to put Step 4 code back in or it gets deleted!
+             # I will reimplement Step 4 with timing.
+             try:
+                pdf_results = await asyncio.to_thread(
+                    vector_store.search_pdf,
+                    request.query,
+                    n_results=request.limit,
+                )
+                
+                bibcodes_to_fetch = [r["bibcode"] for r in pdf_results]
+                papers = paper_repo.get_batch(bibcodes_to_fetch)
+                paper_map = {p.bibcode: p for p in papers}
+                
+                duration = time.time() - t_start
+                yield json.dumps({"type": "log", "level": "info", "message": f"PDF search found {len(pdf_results)} matches in {duration:.2f}s"}) + "\n"
+
+                for result in pdf_results:
+                    bibcode = result["bibcode"]
+                    distance = result["distance"]
+                    text_snippet = result["document"]
+                    if bibcode in seen_bibcodes:
+                        continue
+                    seen_bibcodes.add(bibcode)
+
+                    paper = paper_map.get(bibcode)
+                    if paper:
+                        authors = None
+                        if paper.authors:
+                            try:
+                                authors = json.loads(paper.authors)
+                            except json.JSONDecodeError:
+                                authors = [paper.authors]
+
+                        results.append(SearchResultItem(
+                            bibcode=paper.bibcode,
+                            title=paper.title or "",
+                            year=paper.year,
+                            first_author=paper.first_author,
+                            authors=authors,
+                            abstract=text_snippet[:500] if text_snippet else paper.abstract[:500] if paper.abstract else None,
+                            citation_count=paper.citation_count,
+                            relevance_score=1.0 - min(distance, 1.0),
+                            relevance_explanation=f"Found in PDF content: '{text_snippet[:100]}...'" if text_snippet else "Found in PDF",
+                            citation_type="general",
+                            in_library=True,
+                            has_pdf=True,
+                            pdf_embedded=True,
+                            source="pdf",
+                        ))
+             except Exception as e:
+                yield json.dumps({"type": "log", "level": "error", "message": f"PDF search failed: {e}"}) + "\n"
+
 
         # Step 5: Ranking
         if request.use_llm and llm_client and results and ai_analysis:
             yield json.dumps({"type": "progress", "message": "Re-ranking results with AI..."}) + "\n"
+            t_start = time.time()
             try:
                 from src.db.models import Paper
                 papers_to_rank = []
@@ -507,11 +595,18 @@ async def ai_search_stream(
                         result.citation_type = rp.citation_type.value
 
                 results.sort(key=lambda x: x.relevance_score, reverse=True)
+                
+                duration = time.time() - t_start
+                yield json.dumps({"type": "log", "level": "info", "message": f"AI re-ranking took {duration:.2f}s"}) + "\n"
+                
             except Exception as e:
                  yield json.dumps({"type": "log", "level": "error", "message": f"Ranking failed: {e}"}) + "\n"
 
         # Limit results
         results = results[:request.limit]
+        
+        total_duration = time.time() - t_total_start
+        yield json.dumps({"type": "log", "level": "info", "message": f"Total search time: {total_duration:.2f}s"}) + "\n"
         
         # Final result
         response = AISearchResponse(

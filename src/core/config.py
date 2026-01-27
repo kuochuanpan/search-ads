@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
 
+    # LLM Models
+    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    anthropic_model: str = Field(default="claude-3-haiku-20240307", alias="ANTHROPIC_MODEL")
+
     # Data directories
     data_dir: Path = Field(default=Path.home() / ".search-ads")
 
@@ -185,6 +189,45 @@ class Settings(BaseSettings):
                 content += '\n'
             content += f'\n# Author name(s) for auto-detecting "my papers" (semicolon-separated)\n'
             content += f'{new_line}\n'
+
+        env_path.write_text(content)
+        return True
+
+    def save_models(self, openai_model: str, anthropic_model: str) -> bool:
+        """Save LLM model selection to the .env file."""
+        import re
+        env_path = self.data_dir / ".env"
+
+        # Update the in-memory setting
+        self.openai_model = openai_model
+        self.anthropic_model = anthropic_model
+
+        # Read existing .env file
+        if env_path.exists():
+            content = env_path.read_text()
+        else:
+            content = ""
+
+        # Helper to update or add a line
+        def update_env_var(var_name, value, content):
+            new_line = f'{var_name}="{value}"'
+            if f'{var_name}=' in content:
+                # Replace existing line
+                content = re.sub(
+                    f'^{var_name}=.*$',
+                    new_line,
+                    content,
+                    flags=re.MULTILINE
+                )
+            else:
+                # Add new line
+                if content and not content.endswith('\n'):
+                    content += '\n'
+                content += f'{new_line}\n'
+            return content
+
+        content = update_env_var("OPENAI_MODEL", openai_model, content)
+        content = update_env_var("ANTHROPIC_MODEL", anthropic_model, content)
 
         env_path.write_text(content)
         return True

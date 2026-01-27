@@ -104,17 +104,26 @@ async def search_semantic(
         note_repo = NoteRepository()
 
         # Re-score results
+        # Batch fetch papers and notes
+        bibcodes = [r["bibcode"] for r in results]
+        papers = repo.get_batch(bibcodes)
+        notes = note_repo.get_batch(bibcodes)
+        
+        paper_map = {p.bibcode: p for p in papers}
+        note_map = {n.bibcode: n for n in notes}
+
+        # Re-score results
         scored_results = []
         for result in results:
             bibcode = result["bibcode"]
             raw_distance = result["distance"] or 1.0 # Handle None
             
             # 1. Fetch Paper status
-            paper = repo.get(bibcode)
+            paper = paper_map.get(bibcode)
             is_my_paper = paper.is_my_paper if paper else False
             
             # 2. Check for Notes
-            has_note = note_repo.get(bibcode) is not None
+            has_note = note_map.get(bibcode) is not None
             
             # Apply Weights (lower distance is better)
             # My Paper: 20% boost (0.8 multiplier)
@@ -372,6 +381,14 @@ async def search_semantic_stream(
             repo = PaperRepository()
             note_repo = NoteRepository()
 
+            # Batch fetch papers and notes
+            bibcodes_re_rank = [r["bibcode"] for r in results]
+            papers = repo.get_batch(bibcodes_re_rank)
+            notes = note_repo.get_batch(bibcodes_re_rank)
+            
+            paper_map = {p.bibcode: p for p in papers}
+            note_map = {n.bibcode: n for n in notes}
+
             scored_results = []
             total = len(results)
             
@@ -389,9 +406,9 @@ async def search_semantic_stream(
                 bibcode = result["bibcode"]
                 raw_distance = result["distance"] or 1.0
                 
-                paper = repo.get(bibcode)
+                paper = paper_map.get(bibcode)
                 is_my_paper = paper.is_my_paper if paper else False
-                has_note = note_repo.get(bibcode) is not None
+                has_note = note_map.get(bibcode) is not None
                 
                 multiplier = 1.0
                 if is_my_paper:
