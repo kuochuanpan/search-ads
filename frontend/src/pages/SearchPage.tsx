@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
-import { useAISearch, AISearchParams } from '@/hooks/useSearch'
+import { useAISearch } from '@/hooks/useSearch'
 import { useProjects, useAddPapersToProject } from '@/hooks/useProjects'
 import { api, SearchResultItem } from '@/lib/api'
 
@@ -34,8 +34,18 @@ export function SearchPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedForAdd, setSelectedForAdd] = useState<SearchResultItem | null>(null)
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set())
-  const [copiedState, setCopiedState] = useState<{bibcode: string; type: CopiedType} | null>(null)
+  const [copiedState, setCopiedState] = useState<{ bibcode: string; type: CopiedType } | null>(null)
   const [addedToLibrary, setAddedToLibrary] = useState<Set<string>>(new Set())
+
+  // Streaming state
+  const [streamResults, setStreamResults] = useState<SearchResultItem[]>([])
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [searchProgress, setSearchProgress] = useState<{
+    ads?: { current: number, total?: number, message: string },
+    library?: { current: number, total?: number, message: string },
+    natural?: { message: string }
+  }>({})
 
   const { data: projects } = useProjects()
   const addToProject = useAddPapersToProject()
@@ -56,19 +66,112 @@ export function SearchPage() {
 
     // Clear locally tracked additions when performing a new search
     setAddedToLibrary(new Set())
+    setExpandedResults(new Set())
 
-    const params: AISearchParams = {
-      query: query.trim(),
-      limit: 20,
-      search_library: scopes.has('library'),
-      search_ads: scopes.has('ads'),
-      search_pdf: scopes.has('pdf'),
-      min_year: minYear,
-      min_citations: minCitations,
-      use_llm: mode !== 'keywords',  // Disable LLM for keyword search
+    // If Natural Language mode, use Streaming AI search
+    if (mode === 'natural') {
+      setIsStreaming(true)
+      setStreamResults([])
+      setAiAnalysis(null)
+      setSearchProgress({})
+
+      const params = {
+        query: query.trim(),
+        limit: 20,
+        search_library: scopes.has('library'),
+        search_ads: scopes.has('ads'),
+        search_pdf: scopes.has('pdf'),
+        min_year: minYear,
+        min_citations: minCitations,
+        use_llm: true,
+      }
+
+      try {
+        for await (const event of api.streamAISearch(params)) {
+          if (event.type === 'progress') {
+            setSearchProgress(prev => ({ ...prev, natural: { message: event.message || 'Processing...' } }))
+          } else if (event.type === 'analysis' && event.data) {
+            setAiAnalysis(event.data)
+          } else if (event.type === 'result' && event.data) {
+            // The result event currently allows sending the whole response object
+            // But my backend sends 'AISearchResponse' as data for 'result' type
+            if (event.data.results) {
+              setStreamResults(event.data.results)
+            }
+            if (event.data.ai_analysis) {
+              setAiAnalysis(event.data.ai_analysis)
+            }
+          } else if (event.type === 'log') {
+            // Optional: show logs? For now just ignore or log to console
+            console.log('[Search Log]', event.message)
+          }
+        }
+      } catch (e) {
+        console.error('AI Search stream failed', e)
+        // Fallback or show error?
+      } finally {
+        setIsStreaming(false)
+        setSearchProgress({})
+      }
+      return
     }
 
-    aiSearch.mutate(params)
+    // Keyword/Similar mode: Use Streaming
+    setIsStreaming(true)
+    setStreamResults([])
+    setSearchProgress({})
+
+    // Create promises for each scope
+    const tasks = []
+
+    if (scopes.has('ads')) {
+      tasks.push((async () => {
+        try {
+          setSearchProgress(prev => ({ ...prev, ads: { current: 0, message: 'Starting ADS search...' } }))
+          for await (const event of api.streamSearchAds(query.trim(), 20)) {
+            if (event.type === 'progress') {
+              setSearchProgress(prev => ({ ...prev, ads: { current: event.current || 0, total: event.total, message: event.message || '' } }))
+            } else if (event.type === 'result' && event.data) {
+              setStreamResults(prev => {
+                // Deduplicate
+                if (prev.some(p => p.bibcode === event.data?.bibcode)) return prev
+                return [...prev, { ...event.data, source: 'ads' } as SearchResultItem]
+              })
+            }
+          }
+        } catch (e) {
+          console.error('ADS stream failed', e)
+        } finally {
+          setSearchProgress(prev => ({ ...prev, ads: undefined }))
+        }
+      })())
+    }
+
+    if (scopes.has('library')) {
+      tasks.push((async () => {
+        try {
+          setSearchProgress(prev => ({ ...prev, library: { current: 0, message: 'Starting library search...' } }))
+          for await (const event of api.streamSearchSemantic(query.trim(), 20, minYear, minCitations)) {
+            if (event.type === 'progress') {
+              setSearchProgress(prev => ({ ...prev, library: { current: event.current || 0, total: event.total, message: event.message || '' } }))
+            } else if (event.type === 'result' && event.data) {
+              setStreamResults(prev => {
+                // Deduplicate
+                if (prev.some(p => p.bibcode === event.data?.bibcode)) return prev
+                return [...prev, { ...event.data, source: 'library' } as SearchResultItem]
+              })
+            }
+          }
+        } catch (e) {
+          console.error('Library stream failed', e)
+        } finally {
+          setSearchProgress(prev => ({ ...prev, library: undefined }))
+        }
+      })())
+    }
+
+    await Promise.all(tasks)
+    setIsStreaming(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -257,15 +360,58 @@ export function SearchPage() {
         <Button
           className="w-full mt-4"
           onClick={handleSearch}
-          disabled={aiSearch.isPending || !query.trim()}
+          disabled={(aiSearch.isPending || isStreaming) || !query.trim()}
         >
           <Icon icon={Search} size={16} />
-          {aiSearch.isPending ? 'Searching...' : 'Search'}
+          {aiSearch.isPending || isStreaming ? 'Searching...' : 'Search'}
         </Button>
+
+        {/* Progress Bars for Streaming */}
+        {isStreaming && (
+          <div className="mt-4 space-y-2">
+            {searchProgress.natural && (
+              <div className="text-sm">
+                <div className="flex justify-between mb-1">
+                  <span>{searchProgress.natural.message}</span>
+                </div>
+                <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-primary h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+                </div>
+              </div>
+            )}
+            {searchProgress.ads && (
+              <div className="text-sm">
+                <div className="flex justify-between mb-1">
+                  <span>ADS: {searchProgress.ads.message}</span>
+                  {searchProgress.ads.total && <span>{Math.round((searchProgress.ads.current / searchProgress.ads.total) * 100)}%</span>}
+                </div>
+                <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-blue-500 h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+                </div>
+              </div>
+            )}
+            {searchProgress.library && (
+              <div className="text-sm">
+                <div className="flex justify-between mb-1">
+                  <span>Library: {searchProgress.library.message}</span>
+                  {searchProgress.library.total ? (
+                    <span>{Math.round((searchProgress.library.current / searchProgress.library.total) * 100)}%</span>
+                  ) : null}
+                </div>
+                <div className="w-full bg-secondary rounded-full h-1.5">
+                  <div
+                    className="bg-green-500 h-full transition-all duration-300"
+                    style={{ width: searchProgress.library.total ? `${(searchProgress.library.current / searchProgress.library.total) * 100}%` : '100%' }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* AI Analysis */}
-      {aiSearch.data?.ai_analysis && (
+      {(aiSearch.data?.ai_analysis || aiAnalysis) && (
         <Card className="p-6 border-l-4 border-l-primary">
           <div className="flex items-center gap-2 mb-3">
             <Icon icon={Sparkles} size={18} className="text-primary" />
@@ -274,16 +420,16 @@ export function SearchPage() {
           <div className="space-y-2 text-sm">
             <p>
               <span className="font-medium">Looking for:</span>{' '}
-              <span className={`px-2 py-0.5 rounded ${citationTypeInfo[aiSearch.data.ai_analysis.citation_type_needed]?.color || 'bg-gray-500'} text-white`}>
-                {aiSearch.data.ai_analysis.citation_type_needed}
+              <span className={`px-2 py-0.5 rounded ${citationTypeInfo[(aiSearch.data?.ai_analysis || aiAnalysis).citation_type_needed]?.color || 'bg-gray-500'} text-white`}>
+                {(aiSearch.data?.ai_analysis || aiAnalysis).citation_type_needed}
               </span>{' '}
-              paper about <strong>{aiSearch.data.ai_analysis.topic}</strong>
+              paper about <strong>{(aiSearch.data?.ai_analysis || aiAnalysis).topic}</strong>
             </p>
-            <p className="text-muted-foreground">{aiSearch.data.ai_analysis.reasoning}</p>
-            {aiSearch.data.ai_analysis.keywords.length > 0 && (
+            <p className="text-muted-foreground">{(aiSearch.data?.ai_analysis || aiAnalysis).reasoning}</p>
+            {(aiSearch.data?.ai_analysis || aiAnalysis).keywords.length > 0 && (
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-muted-foreground">Keywords:</span>
-                {aiSearch.data.ai_analysis.keywords.map((kw) => (
+                {(aiSearch.data?.ai_analysis || aiAnalysis).keywords.map((kw: string) => (
                   <Badge key={kw} variant="outline">{kw}</Badge>
                 ))}
               </div>
@@ -292,161 +438,164 @@ export function SearchPage() {
         </Card>
       )}
 
-      {/* Results */}
-      {aiSearch.data?.results && aiSearch.data.results.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium">
-              Results ({aiSearch.data.total_count} papers)
-            </h3>
-          </div>
+      {/* Results (Unified Display) */}
+      {(
+        (aiSearch.data?.results && aiSearch.data.results.length > 0) ||
+        (streamResults.length > 0)
+      ) && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">
+                Results ({aiSearch.data?.total_count || streamResults.length} papers)
+              </h3>
+            </div>
 
-          {aiSearch.data.results.map((paper, index) => (
-            <Card key={paper.bibcode} className="overflow-hidden">
-              <div className="p-4">
-                {/* Header row */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    {/* Rank and Title */}
-                    <div className="flex items-start gap-3">
-                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
-                        {index + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <button
-                          onClick={() => toggleExpanded(paper.bibcode)}
-                          className="text-left w-full group"
-                        >
-                          <h4 className="font-medium group-hover:text-primary transition-colors line-clamp-2">
-                            {paper.title}
-                          </h4>
-                        </button>
-                        <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                          <span>{paper.first_author}{paper.year ? ` et al. (${paper.year})` : ''}</span>
-                          {paper.citation_count !== undefined && (
-                            <>
-                              <span>·</span>
-                              <span>{paper.citation_count.toLocaleString()} citations</span>
-                            </>
-                          )}
-                          {(paper.in_library || addedToLibrary.has(paper.bibcode)) && (
-                            <>
-                              <span>·</span>
-                              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                                <Icon icon={Library} size={12} />
-                                In library
-                              </span>
-                            </>
-                          )}
+            {(aiSearch.data?.results || streamResults).map((paper, index) => (
+              <Card key={`${paper.bibcode}-${index}`} className="overflow-hidden">
+                <div className="p-4">
+                  {/* Header row */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {/* Rank and Title */}
+                      <div className="flex items-start gap-3">
+                        <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                          {index + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <button
+                            onClick={() => toggleExpanded(paper.bibcode)}
+                            className="text-left w-full group"
+                          >
+                            <h4 className="font-medium group-hover:text-primary transition-colors line-clamp-2">
+                              {paper.title}
+                            </h4>
+                          </button>
+                          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                            <span>{paper.first_author}{paper.year ? ` et al. (${paper.year})` : ''}</span>
+                            {paper.citation_count !== undefined && (
+                              <>
+                                <span>·</span>
+                                <span>{paper.citation_count.toLocaleString()} citations</span>
+                              </>
+                            )}
+                            {(paper.in_library || addedToLibrary.has(paper.bibcode)) && (
+                              <>
+                                <span>·</span>
+                                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                  <Icon icon={Library} size={12} />
+                                  In library
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Relevance Score */}
-                  <div className="flex-shrink-0 text-right">
-                    <div className={`text-lg font-semibold ${getRelevanceColor(paper.relevance_score)}`}>
-                      {Math.round(paper.relevance_score * 100)}%
-                    </div>
-                    <Badge
-                      className={`${citationTypeInfo[paper.citation_type]?.color || 'bg-gray-500'} text-white`}
-                    >
-                      {paper.citation_type}
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Why this paper? */}
-                {paper.relevance_explanation && (
-                  <div className="mt-3 p-3 bg-secondary/50 rounded text-sm">
-                    <span className="font-medium">Why this paper: </span>
-                    {paper.relevance_explanation}
-                  </div>
-                )}
-
-                {/* Expanded content */}
-                {expandedResults.has(paper.bibcode) && (
-                  <div className="mt-4 pt-4 border-t">
-                    {paper.abstract && (
-                      <div className="mb-4">
-                        <h5 className="text-sm font-medium mb-2">Abstract</h5>
-                        <p className="text-sm text-muted-foreground">{paper.abstract}</p>
+                    {/* Relevance Score */}
+                    <div className="flex-shrink-0 text-right">
+                      <div className={`text-lg font-semibold ${getRelevanceColor(paper.relevance_score)}`}>
+                        {Math.round(paper.relevance_score * 100)}%
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Badge variant="outline">
-                        Source: {paper.source === 'library' ? 'Library' : paper.source === 'ads' ? 'ADS' : 'PDF'}
+                      <Badge
+                        className={`${citationTypeInfo[paper.citation_type]?.color || 'bg-gray-500'} text-white`}
+                      >
+                        {paper.citation_type}
                       </Badge>
-                      {paper.has_pdf && <Badge variant="outline">Has PDF</Badge>}
-                      {paper.pdf_embedded && <Badge variant="outline">Searchable PDF</Badge>}
                     </div>
                   </div>
-                )}
 
-                {/* Actions */}
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleExpanded(paper.bibcode)}
-                    >
-                      <Icon icon={expandedResults.has(paper.bibcode) ? ChevronUp : ChevronDown} size={14} />
-                      {expandedResults.has(paper.bibcode) ? 'Less' : 'More'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => window.open(`https://ui.adsabs.harvard.edu/abs/${paper.bibcode}/abstract`, '_blank')}
-                    >
-                      <Icon icon={ExternalLink} size={14} />
-                      ADS
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyBibTeX(paper)}
-                    >
-                      <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? Check : Copy} size={14} />
-                      {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? 'Copied!' : 'BibTeX'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyAASTeX(paper)}
-                    >
-                      <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? Check : FileCode} size={14} />
-                      {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? 'Copied!' : 'AASTeX'}
-                    </Button>
-                  </div>
+                  {/* Why this paper? */}
+                  {paper.relevance_explanation && (
+                    <div className="mt-3 p-3 bg-secondary/50 rounded text-sm">
+                      <span className="font-medium">Why this paper: </span>
+                      {paper.relevance_explanation}
+                    </div>
+                  )}
 
-                  <div>
-                    {(paper.in_library || addedToLibrary.has(paper.bibcode)) ? (
-                      <Button variant="outline" size="sm" disabled>
-                        <Icon icon={Check} size={14} />
-                        In Library
-                      </Button>
-                    ) : (
+                  {/* Expanded content */}
+                  {expandedResults.has(paper.bibcode) && (
+                    <div className="mt-4 pt-4 border-t">
+                      {paper.abstract && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-medium mb-2">Abstract</h5>
+                          <p className="text-sm text-muted-foreground">{paper.abstract}</p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Badge variant="outline">
+                          Source: {paper.source === 'library' ? 'Library' : paper.source === 'ads' ? 'ADS' : 'PDF'}
+                        </Badge>
+                        {paper.has_pdf && <Badge variant="outline">Has PDF</Badge>}
+                        {paper.pdf_embedded && <Badge variant="outline">Searchable PDF</Badge>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <div className="flex items-center gap-2">
                       <Button
-                        variant="default"
+                        variant="ghost"
                         size="sm"
-                        onClick={() => openAddModal(paper)}
+                        onClick={() => toggleExpanded(paper.bibcode)}
                       >
-                        <Icon icon={Plus} size={14} />
-                        Add to Library
+                        <Icon icon={expandedResults.has(paper.bibcode) ? ChevronUp : ChevronDown} size={14} />
+                        {expandedResults.has(paper.bibcode) ? 'Less' : 'More'}
                       </Button>
-                    )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.open(`https://ui.adsabs.harvard.edu/abs/${paper.bibcode}/abstract`, '_blank')}
+                      >
+                        <Icon icon={ExternalLink} size={14} />
+                        ADS
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyBibTeX(paper)}
+                      >
+                        <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? Check : Copy} size={14} />
+                        {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibtex' ? 'Copied!' : 'BibTeX'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyAASTeX(paper)}
+                      >
+                        <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? Check : FileCode} size={14} />
+                        {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'aastex' ? 'Copied!' : 'AASTeX'}
+                      </Button>
+                    </div>
+
+                    <div>
+                      {(paper.in_library || addedToLibrary.has(paper.bibcode)) ? (
+                        <Button variant="outline" size="sm" disabled>
+                          <Icon icon={Check} size={14} />
+                          In Library
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => openAddModal(paper)}
+                        >
+                          <Icon icon={Plus} size={14} />
+                          Add to Library
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+              </Card>
+            ))}
+          </div>
+        )}
 
       {/* Empty state */}
-      {!aiSearch.isPending && !aiSearch.data?.results?.length && (
+      {!aiSearch.isPending && !isStreaming && !aiSearch.data?.results?.length && !streamResults.length && (
         <Card className="p-6">
           <div className="text-center py-12 text-muted-foreground">
             <Icon icon={Search} size={48} className="mx-auto mb-4 opacity-50" />

@@ -29,11 +29,21 @@ export function ImportPage() {
   }, [activeProject])
   const [adsLoading, setAdsLoading] = useState(false)
   const [adsResult, setAdsResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [adsProgress, setAdsProgress] = useState<{
+    message: string
+    logs: Array<{ type: 'success' | 'info' | 'error'; message: string }>
+  } | null>(null)
 
   // Batch Import
   const [batchText, setBatchText] = useState('')
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchResult, setBatchResult] = useState<{ success: boolean; imported: number; failed: number } | null>(null)
+  const [importProgress, setImportProgress] = useState<{
+    current: number
+    total: number
+    message: string
+    logs: Array<{ type: 'success' | 'error'; message: string }>
+  } | null>(null)
 
   // BibTeX Import
   const [bibtexContent, setBibtexContent] = useState('')
@@ -44,19 +54,33 @@ export function ImportPage() {
     if (!adsUrl.trim()) return
     setAdsLoading(true)
     setAdsResult(null)
+    setAdsProgress({ message: 'Starting import...', logs: [] })
+
     try {
-      const result = await api.importFromAds(adsUrl, {
+      for await (const event of api.streamImportFromAds(adsUrl, {
         project: selectedProject || undefined,
         expand_references: expandRefs,
         expand_citations: expandCitations,
-      })
-      setAdsResult({ success: result.success, message: result.message })
-      if (result.success) {
-        setAdsUrl('')
-        // Invalidate queries to refresh library view
-        queryClient.invalidateQueries({ queryKey: ['papers'] })
-        queryClient.invalidateQueries({ queryKey: ['stats'] })
-        queryClient.invalidateQueries({ queryKey: ['projects'] })
+      })) {
+        if (event.type === 'progress') {
+          setAdsProgress(prev => prev ? ({ ...prev, message: event.message || 'Processing...' }) : null)
+        } else if (event.type === 'log') {
+          setAdsProgress(prev => prev ? ({
+            ...prev,
+            logs: [...prev.logs, { type: event.level === 'error' ? 'error' : (event.level === 'info' ? 'info' : 'success'), message: event.message || '' }]
+          }) : null)
+        } else if (event.type === 'result' && event.data) {
+          setAdsResult({ success: event.data.success, message: event.data.message })
+          if (event.data.success) {
+            setAdsUrl('')
+            // Invalidate queries to refresh library view
+            queryClient.invalidateQueries({ queryKey: ['papers'] })
+            queryClient.invalidateQueries({ queryKey: ['stats'] })
+            queryClient.invalidateQueries({ queryKey: ['projects'] })
+          }
+        } else if (event.type === 'error') {
+          setAdsResult({ success: false, message: event.message || 'Import failed' })
+        }
       }
     } catch (e: any) {
       setAdsResult({ success: false, message: e.message || 'Import failed' })
@@ -70,12 +94,35 @@ export function ImportPage() {
     if (identifiers.length === 0) return
     setBatchLoading(true)
     setBatchResult(null)
+    setImportProgress({ current: 0, total: identifiers.length, message: 'Starting...', logs: [] })
+
     try {
-      const result = await api.batchImport(identifiers, selectedProject || undefined)
-      setBatchResult({ success: result.success, imported: result.imported, failed: result.failed })
-      if (result.success) setBatchText('')
+      for await (const event of api.streamBatchImport(identifiers, selectedProject || undefined)) {
+        if (event.type === 'progress') {
+          setImportProgress(prev => prev ? ({
+            ...prev,
+            current: event.current || prev.current,
+            total: event.total || prev.total,
+            message: event.message || prev.message
+          }) : null)
+        } else if (event.type === 'log') {
+          setImportProgress(prev => prev ? ({
+            ...prev,
+            logs: [...prev.logs, { type: event.level === 'error' ? 'error' : 'success', message: event.message || '' }]
+          }) : null)
+        } else if (event.type === 'result' && event.data) {
+          setBatchResult(event.data)
+          if (event.data.success) setBatchText('')
+          // Keep progress visible for a moment or let user dismiss? 
+          // We'll leave it to show logs until user starts new action or we can clear it.
+        }
+      }
     } catch (e: any) {
       setBatchResult({ success: false, imported: 0, failed: identifiers.length })
+      setImportProgress(prev => prev ? ({
+        ...prev,
+        logs: [...prev.logs, { type: 'error', message: e.message || 'Import failed' }]
+      }) : null)
     } finally {
       setBatchLoading(false)
     }
@@ -171,6 +218,28 @@ export function ImportPage() {
           {adsLoading ? 'Importing...' : 'Add Paper'}
         </Button>
 
+        {adsProgress && (
+          <div className="mt-4 space-y-2">
+            <div className="text-sm flex justify-between">
+              <span>{adsProgress.message}</span>
+            </div>
+            {/* Indeterminate progress bar since we don't know total steps for single import recursion easily */}
+            <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+              <div className="bg-primary h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+            </div>
+
+            {adsProgress.logs.length > 0 && (
+              <div className="mt-2 max-h-32 overflow-y-auto text-xs space-y-1 p-2 bg-secondary/30 rounded border">
+                {adsProgress.logs.map((log, i) => (
+                  <div key={i} className={log.type === 'error' ? 'text-red-500' : (log.type === 'info' ? 'text-blue-500' : 'text-green-600 dark:text-green-400')}>
+                    {log.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {adsResult && (
           <div className={`mt-3 p-3 rounded flex items-center gap-2 ${adsResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`}>
             <Icon icon={adsResult.success ? Check : AlertCircle} size={16} />
@@ -204,7 +273,32 @@ export function ImportPage() {
           {batchLoading ? 'Importing...' : `Import ${batchText.split('\n').filter(s => s.trim()).length} Papers`}
         </Button>
 
-        {batchResult && (
+        {importProgress && (
+          <div className="mt-4 space-y-2">
+            <div className="flex justify-between text-sm mb-1">
+              <span>{importProgress.message}</span>
+              <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+            </div>
+            <div className="w-full bg-secondary rounded-full h-2.5 dark:bg-gray-700">
+              <div
+                className="bg-primary h-2.5 rounded-full transition-all duration-300"
+                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              ></div>
+            </div>
+
+            {/* Logs area */}
+            <div className="mt-2 max-h-32 overflow-y-auto text-xs space-y-1 p-2 bg-secondary/30 rounded border">
+              {importProgress.logs.map((log, i) => (
+                <div key={i} className={log.type === 'error' ? 'text-red-500' : 'text-green-600 dark:text-green-400'}>
+                  {log.message}
+                </div>
+              ))}
+              {importProgress.logs.length === 0 && <div className="text-muted-foreground italic">Logs will appear here...</div>}
+            </div>
+          </div>
+        )}
+
+        {batchResult && !batchLoading && (
           <div className={`mt-3 p-3 rounded flex items-center gap-2 ${batchResult.success ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`}>
             <Icon icon={batchResult.success ? Check : AlertCircle} size={16} />
             Imported {batchResult.imported} papers{batchResult.failed > 0 && `, ${batchResult.failed} failed`}

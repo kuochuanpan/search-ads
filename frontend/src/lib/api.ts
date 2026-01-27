@@ -228,6 +228,19 @@ export interface CitationsResponse {
   has_more: boolean
 }
 
+export interface NDJSONStreamResult<T> {
+  type: 'progress' | 'result' | 'error' | 'done' | 'log' | 'analysis'
+  message?: string
+  data?: T
+  current?: number
+  total?: number
+  count?: number
+  level?: 'info' | 'warning' | 'error' | 'success'
+  imported?: number
+  failed?: number
+  errors?: string[]
+}
+
 // API Client
 async function request<T>(
   path: string,
@@ -248,6 +261,44 @@ async function request<T>(
   }
 
   return response.json()
+}
+
+async function* streamRequest<T>(path: string, options: RequestInit = {}): AsyncGenerator<NDJSONStreamResult<T>> {
+  const url = `${API_BASE}${path}`
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  })
+
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => ({ error: response.statusText }))
+    throw new Error(error.error || error.detail || 'Request failed')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        yield JSON.parse(line)
+      } catch (e) {
+        console.warn('Failed to parse NDJSON line:', line)
+      }
+    }
+  }
 }
 
 export const api = {
@@ -452,6 +503,26 @@ export const api = {
     )
   },
 
+  streamSearchSemantic: (
+    query: string,
+    limit = 20,
+    minYear?: number,
+    minCitations?: number
+  ) => {
+    const params = new URLSearchParams()
+    params.append('limit', String(limit))
+    if (minYear !== undefined) params.append('min_year', String(minYear))
+    if (minCitations !== undefined) params.append('min_citations', String(minCitations))
+
+    return streamRequest<SearchResultItem>(
+      `/search/semantic/stream?${params.toString()}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      }
+    )
+  },
+
   searchPdf: (query: string, limit = 20, bibcode?: string) =>
     request<{ query: string; results: Array<any>; count: number }>(
       `/search/pdf?limit=${limit}${bibcode ? `&bibcode=${encodeURIComponent(bibcode)}` : ''}`,
@@ -463,6 +534,12 @@ export const api = {
 
   searchAds: (query: string, limit = 20) =>
     request<{ query: string; results: Array<any>; count: number }>('/search/ads', {
+      method: 'POST',
+      body: JSON.stringify({ query, limit }),
+    }),
+
+  streamSearchAds: (query: string, limit = 20) =>
+    streamRequest<SearchResultItem>('/search/ads/stream', {
       method: 'POST',
       body: JSON.stringify({ query, limit }),
     }),
@@ -488,9 +565,41 @@ export const api = {
       body: JSON.stringify({ identifier, ...options }),
     }),
 
+  streamImportFromAds: (
+    identifier: string,
+    options?: {
+      project?: string
+      expand_references?: boolean
+      expand_citations?: boolean
+      max_hops?: number
+    }
+  ) =>
+    streamRequest<{
+      success: boolean
+      bibcode?: string
+      title?: string
+      message: string
+      papers_added: number
+    }>(
+      '/import/ads/stream',
+      {
+        method: 'POST',
+        body: JSON.stringify({ identifier, ...options }),
+      }
+    ),
+
   batchImport: (identifiers: string[], project?: string) =>
     request<{ success: boolean; imported: number; failed: number; errors: string[] }>(
       '/import/batch',
+      {
+        method: 'POST',
+        body: JSON.stringify({ identifiers, project }),
+      }
+    ),
+
+  streamBatchImport: (identifiers: string[], project?: string) =>
+    streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
+      '/import/batch/stream',
       {
         method: 'POST',
         body: JSON.stringify({ identifiers, project }),
@@ -571,6 +680,35 @@ export const api = {
     }),
 
   // AI-powered Search
+  streamAISearch: (params: {
+    query: string
+    limit?: number
+    search_library?: boolean
+    search_ads?: boolean
+    search_pdf?: boolean
+    min_year?: number
+    min_citations?: number
+    use_llm?: boolean
+  }) =>
+    streamRequest<{
+      query: string
+      results: SearchResultItem[]
+      ai_analysis?: {
+        topic: string
+        claim: string
+        citation_type_needed: string
+        keywords: string[]
+        reasoning: string
+      }
+      total_count: number
+      // Also supports 'analysis' event with just analysis data
+      type?: string
+      data?: any
+    }>('/ai/search/stream', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
   aiSearch: (params: {
     query: string
     limit?: number

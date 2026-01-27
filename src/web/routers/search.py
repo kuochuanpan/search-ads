@@ -1,7 +1,10 @@
 """Search API router."""
 
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
+import json
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.db.repository import PaperRepository
@@ -208,3 +211,176 @@ async def search_ads(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ADS search failed: {str(e)}")
+
+
+@router.post("/ads/stream")
+async def search_ads_stream(
+    request: SearchRequest,
+    ads_client=Depends(get_ads_client),
+):
+    """Search NASA ADS for papers with streaming results."""
+    
+    async def event_generator():
+        try:
+            # First yield a starting message
+            yield json.dumps({
+                "type": "progress",
+                "message": f"Searching ADS for '{request.query}'..."
+            }) + "\n"
+
+            # The streaming search is synchronous generator, but we're in an async function.
+            # We need to iterate it. Since ads_client.search is sync (using requests presumably),
+            # this might block. Ideally it should be async, but for now we iterate the generator.
+            
+            # Note: ads_client.search with stream=True returns a generator
+            count = 0
+            for paper in ads_client.search(request.query, limit=request.limit, stream=True):
+                count += 1
+                
+                # Convert paper to result format
+                data = {
+                    "bibcode": paper.bibcode,
+                    "title": paper.title,
+                    "year": paper.year,
+                    "first_author": paper.first_author,
+                    "citation_count": paper.citation_count,
+                    "abstract": paper.abstract[:500] if paper.abstract else None,
+                }
+                
+                yield json.dumps({
+                    "type": "result",
+                    "data": data,
+                    "count": count
+                }) + "\n"
+                
+                # Yield to event loop
+                await asyncio.sleep(0.0)
+
+            yield json.dumps({
+                "type": "done",
+                "total": count
+            }) + "\n"
+            
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "message": str(e)
+            }) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+
+@router.post("/semantic/stream")
+async def search_semantic_stream(
+    request: SearchRequest,
+    min_year: Optional[int] = Query(default=None),
+    min_citations: Optional[int] = Query(default=None),
+    vector_store=Depends(get_vector_store_dep),
+):
+    """Semantic search using vector embeddings with streaming progress."""
+    
+    async def event_generator():
+        try:
+            yield json.dumps({
+                "type": "progress",
+                "message": "Performing vector search..."
+            }) + "\n"
+            await asyncio.sleep(0)
+
+            results = vector_store.search(
+                request.query,
+                n_results=request.limit * 2,  # Fetch more to allow for re-ranking
+                min_year=min_year,
+                min_citations=min_citations,
+            )
+
+            if not results:
+                yield json.dumps({"type": "done", "total": 0}) + "\n"
+                return
+
+            yield json.dumps({
+                "type": "progress",
+                "message": f"Found {len(results)} matches. Re-ranking..."
+            }) + "\n"
+            await asyncio.sleep(0)
+
+            # Re-ranking logic
+            from src.db.repository import PaperRepository, NoteRepository
+            repo = PaperRepository()
+            note_repo = NoteRepository()
+
+            scored_results = []
+            total = len(results)
+            
+            for i, result in enumerate(results):
+                # Report progress every few items
+                if i % 5 == 0:
+                    yield json.dumps({
+                        "type": "progress",
+                        "message": f"Processing result {i+1}/{total}...",
+                        "current": i + 1,
+                        "total": total
+                    }) + "\n"
+                    await asyncio.sleep(0)
+
+                bibcode = result["bibcode"]
+                raw_distance = result["distance"] or 1.0
+                
+                paper = repo.get(bibcode)
+                is_my_paper = paper.is_my_paper if paper else False
+                has_note = note_repo.get(bibcode) is not None
+                
+                multiplier = 1.0
+                if is_my_paper:
+                    multiplier *= 0.8
+                if has_note:
+                    multiplier *= 0.9
+                    
+                new_distance = raw_distance * multiplier
+                
+                search_result = {
+                    "bibcode": bibcode,
+                    "distance": new_distance,
+                    "title": result["metadata"].get("title"),
+                    "year": result["metadata"].get("year"),
+                    "first_author": result["metadata"].get("first_author"),
+                    # Add extra fields for UI display that aren't in SemanticSearchResult model
+                    "citation_count": paper.citation_count if paper else None,
+                    "in_library": True, # It's local search
+                    "relevance_score": 1.0 - min(new_distance, 1.0) # Approx score
+                }
+                scored_results.append(search_result)
+
+            # Re-sort
+            scored_results.sort(key=lambda x: x["distance"])
+            final_results = scored_results[:request.limit]
+
+            # Yield final results one by one or as a batch? 
+            # Re-ranking means we can't stream results until we have them all sorted.
+            # But we streamed progress of re-ranking.
+            
+            yield json.dumps({
+                "type": "progress",
+                "message": "Finalizing results..."
+            }) + "\n"
+
+            for res in final_results:
+                yield json.dumps({
+                    "type": "result",
+                    "data": res
+                }) + "\n"
+
+            yield json.dumps({
+                "type": "done",
+                "total": len(final_results)
+            }) + "\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield json.dumps({
+                "type": "error",
+                "message": str(e)
+            }) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")

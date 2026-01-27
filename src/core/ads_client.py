@@ -183,6 +183,7 @@ class ADSClient:
         sort: str = "citation_count desc",
         year_range: Optional[tuple[int, int]] = None,
         save: bool = True,
+        stream: bool = False,
     ) -> list[Paper]:
         """Search ADS for papers.
 
@@ -219,12 +220,18 @@ class ADSClient:
                 if save:
                     paper = self.paper_repo.add(paper)
                 papers.append(paper)
+                if stream:
+                    yield paper
 
-            return papers
+            if not stream:
+                return papers
 
         except Exception as e:
             print(f"Error searching ADS: {e}")
-            return []
+            if stream:
+                yield from []
+            else:
+                return []
 
     def fetch_references(
         self,
