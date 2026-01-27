@@ -189,13 +189,41 @@ async def search_pdf(
 async def search_ads(
     request: SearchRequest,
     ads_client=Depends(get_ads_client),
+    llm_client=Depends(get_llm_client),
 ):
-    """Search NASA ADS for papers."""
+    """Search NASA ADS for papers.
+    
+    If query is natural language, uses LLM to extract keywords.
+    """
     try:
-        papers = ads_client.search(request.query, max_results=request.limit)
+        # Check if query looks like a structured ADS query
+        # ADS queries often contain field qualifiers like "author:", "year:", etc.
+        # or operators like "AND", "OR".
+        # If it looks like a simple sentence, use LLM to extract keywords.
+        query = request.query
+        
+        # Simple heuristic: if no common ADS operators/fields and > 3 words, try extraction
+        is_structured = any(x in query.lower() for x in ["author:", "year:", "bibcode:", "title:", "abs:", " AND ", " OR "])
+        
+        if not is_structured and len(query.split()) > 3 and llm_client:
+            try:
+                # Use strict keyword extraction
+                keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
+                if keywords:
+                    # Construct a new query with keywords
+                    # Using simple space join (implicit AND/OR depending on ADS config, typically defaults to AND in modern search)
+                    # ADS default operator is often AND for simple terms
+                    query = " ".join(keywords)
+                    print(f"Refined natural language query '{request.query}' to: '{query}'")
+            except Exception as e:
+                print(f"Keyword extraction failed: {e}")
+                # Fallback to original query
+
+        papers = ads_client.search(query, max_results=request.limit)
 
         return {
             "query": request.query,
+            "transformed_query": query if query != request.query else None,
             "results": [
                 {
                     "bibcode": p.bibcode,
@@ -217,6 +245,7 @@ async def search_ads(
 async def search_ads_stream(
     request: SearchRequest,
     ads_client=Depends(get_ads_client),
+    llm_client=Depends(get_llm_client),
 ):
     """Search NASA ADS for papers with streaming results."""
     
@@ -228,13 +257,47 @@ async def search_ads_stream(
                 "message": f"Searching ADS for '{request.query}'..."
             }) + "\n"
 
-            # The streaming search is synchronous generator, but we're in an async function.
-            # We need to iterate it. Since ads_client.search is sync (using requests presumably),
-            # this might block. Ideally it should be async, but for now we iterate the generator.
+            query = request.query
             
-            # Note: ads_client.search with stream=True returns a generator
+            # Simple heuristic: if no common ADS operators/fields and > 3 words, try extraction
+            is_structured = any(x in query.lower() for x in ["author:", "year:", "bibcode:", "title:", "abs:", " AND ", " OR "])
+            
+            if not is_structured and len(query.split()) > 3 and llm_client:
+                try:
+                    yield json.dumps({
+                        "type": "progress",
+                        "message": "Analyzing natural language query..."
+                    }) + "\n"
+                    
+                    # Use strict keyword extraction
+                    keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
+                    if keywords:
+                        query = " ".join(keywords)
+                        yield json.dumps({
+                            "type": "progress",
+                            "message": f"Refined query: {query}"
+                        }) + "\n"
+                except Exception as e:
+                    print(f"Keyword extraction failed: {e}")
+            
+            # Use search_stream method which yields results
+            # We iterate it. Since it's a synchronous generator, we wrap iteration if needed, 
+            # but standard iteration in async helper is usually fine for short bursts, 
+            # though strictly blocking.
+            # Ideally we'd run the whole generator in a thread but that's complex to stream back.
+            # For now, we iterate directly as it yields quickly per item (mostly).
+            # If ads_client.search_stream does network calls per item (it doesn't, it fetches all then yields),
+            # then it blocks once at the start.
+            
+            # Wait, my fix for search_stream calls list(search) internally, so it blocks at the START.
+            # To be non-blocking, we should wrap the call? 
+            # But we can't wrap a generator creation easily in to_thread and then iterate it async 
+            # unless we consume it all.
+            # For now, we accept the initial block.
+            
             count = 0
-            for paper in ads_client.search(request.query, limit=request.limit, stream=True):
+            # Use the new search_stream method
+            for paper in ads_client.search_stream(query, limit=request.limit):
                 count += 1
                 
                 # Convert paper to result format

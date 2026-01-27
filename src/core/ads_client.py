@@ -101,11 +101,9 @@ class ADSClient:
             doi = article.doi[0] if isinstance(article.doi, list) else article.doi
 
         # Construct PDF URL (ADS or arXiv)
-        pdf_url = None
-        if arxiv_id:
-            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-        else:
-            pdf_url = f"https://ui.adsabs.harvard.edu/link_gateway/{article.bibcode}/PUB_PDF"
+        # Always prefer ADS link gateway as primary source (it handles journal redirects)
+        # We keep arxiv_id for fallback in PDFHandler
+        pdf_url = f"https://ui.adsabs.harvard.edu/link_gateway/{article.bibcode}/PUB_PDF"
 
         # Convert year to int (ADS returns it as str)
         year = None
@@ -145,7 +143,7 @@ class ADSClient:
             Paper object or None if not found
         """
         # Parse bibcode from URL if needed
-        bibcode = self.parse_bibcode_from_url(bibcode) or bibcode
+        bibcode = (self.parse_bibcode_from_url(bibcode) or bibcode).strip()
 
         # Check cache first
         existing = self.paper_repo.get(bibcode)
@@ -155,8 +153,13 @@ class ADSClient:
         self._check_rate_limit()
 
         try:
+            # Use specific field search for accuracy, falling back to identifier search
+            # This handles cases where user provides an alternate ID that looks like a bibcode
+            # Also handle potentially weird characters by quoting if needed (though bibcodes are usually safe)
+            q = f'bibcode:"{bibcode}" OR identifier:"{bibcode}"'
+            
             query = ads.SearchQuery(
-                bibcode=bibcode,
+                q=q,
                 fl=self.FIELDS,
             )
             articles = list(query)
@@ -183,7 +186,6 @@ class ADSClient:
         sort: str = "citation_count desc",
         year_range: Optional[tuple[int, int]] = None,
         save: bool = True,
-        stream: bool = False,
     ) -> list[Paper]:
         """Search ADS for papers.
 
@@ -220,18 +222,68 @@ class ADSClient:
                 if save:
                     paper = self.paper_repo.add(paper)
                 papers.append(paper)
-                if stream:
-                    yield paper
 
-            if not stream:
-                return papers
+            return papers
 
         except Exception as e:
             print(f"Error searching ADS: {e}")
-            if stream:
-                yield from []
-            else:
-                return []
+            return []
+
+    def search_stream(
+        self,
+        query: str,
+        limit: int = 10,
+        sort: str = "citation_count desc",
+        year_range: Optional[tuple[int, int]] = None,
+        save: bool = True,
+    ):
+        """Search ADS for papers, yielding results as they are processed.
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results
+            sort: Sort order (default: by citation count)
+            year_range: Optional (min_year, max_year) tuple
+            save: Whether to save results to database
+
+        Yields:
+            Paper objects
+        """
+        self._check_rate_limit()
+
+        # Build query
+        q = query
+        if year_range:
+            q = f"({q}) AND year:[{year_range[0]} TO {year_range[1]}]"
+
+        try:
+            search = ads.SearchQuery(
+                q=q,
+                fl=self.FIELDS,
+                sort=sort,
+                rows=limit,
+            )
+            # Note: ads.SearchQuery is an iterator, so we can iterate directly
+            # However, to be safe and consistent with previous behavior (where we listed first),
+            # we'll list it unless we want true streaming from the library.
+            # The library likely fetches in batches anyway.
+            # Let's iterate the query object directly if possible, or list it.
+            # Given the previous code did list(search), let's stick to that to be safe against timeouts
+            # or weird iterator behavior, although true streaming would avoid loading all meaningful into memory.
+            # But here `articles = list(search)` suggests we fetch all first.
+            articles = list(search)
+            self._track_call()
+
+            for article in articles:
+                paper = self._ads_article_to_paper(article)
+                if save:
+                    paper = self.paper_repo.add(paper)
+                yield paper
+
+        except Exception as e:
+            print(f"Error searching ADS: {e}")
+            # Yield nothing on error
+
 
     def fetch_references(
         self,

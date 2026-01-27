@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   ExternalLink,
@@ -22,7 +22,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Icon } from '@/components/ui/Icon'
 import { Modal } from '@/components/ui/Modal'
-import { usePaper, useToggleMyPaper, useDeletePaper } from '@/hooks/usePapers'
+import { usePaper, useToggleMyPaper, useDeletePaper, useDownloadPdf } from '@/hooks/usePapers'
 import { useNote, useCreateOrUpdateNote, useDeleteNote } from '@/hooks/useNotes'
 import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useAskPaper } from '@/hooks/useSearch'
@@ -40,6 +40,7 @@ export function PaperDetailPage() {
   const createOrUpdateNote = useCreateOrUpdateNote()
   const deleteNote = useDeleteNote()
   const addPaperToProject = useAddPaperToProject()
+  const downloadPdf = useDownloadPdf()
 
   const queryClient = useQueryClient()
   const [showNoteModal, setShowNoteModal] = useState(false)
@@ -165,13 +166,7 @@ export function PaperDetailPage() {
     }
   }
 
-  const handleDownloadPdf = async () => {
-    try {
-      await api.downloadPdf(bibcode)
-    } catch (e) {
-      console.error('Failed to download PDF:', e)
-    }
-  }
+
 
   const handleOpenPdf = async () => {
     try {
@@ -259,9 +254,17 @@ export function PaperDetailPage() {
               Open PDF
             </Button>
           ) : paper.pdf_url ? (
-            <Button variant="outline" onClick={handleDownloadPdf}>
-              <Icon icon={Download} size={16} />
-              Download PDF
+            <Button
+              variant="outline"
+              onClick={() => downloadPdf.mutate(bibcode)}
+              disabled={downloadPdf.isPending}
+            >
+              {downloadPdf.isPending ? (
+                <Icon icon={Loader2} size={16} className="animate-spin" />
+              ) : (
+                <Icon icon={Download} size={16} />
+              )}
+              {downloadPdf.isPending ? 'Downloading PDF...' : 'Download PDF'}
             </Button>
           ) : null}
 
