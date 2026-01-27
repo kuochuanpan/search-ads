@@ -58,8 +58,8 @@ export function LibraryFilters({ filters, onChange }: LibraryFiltersProps) {
     <div className="space-y-3">
       {/* Search and basic filters */}
       <div className="flex gap-2 items-center">
-        <div className="relative flex-1">
-          <Icon icon={Search} size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative flex-1 min-w-[200px]">
+          <Icon icon={Search} size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search papers..."
             value={filters.search}

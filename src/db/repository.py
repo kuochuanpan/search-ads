@@ -141,14 +141,69 @@ class PaperRepository:
             return list(session.exec(query).all())
 
     def delete(self, bibcode: str) -> bool:
-        """Delete a paper by bibcode."""
+        """Delete a paper and all associated data by bibcode.
+        
+        Removes:
+        - Paper record
+        - PDF file from filesystem
+        - Vector embeddings (abstract, PDF, note)
+        - Citations (in/out)
+        - Project associations
+        - Note record
+        """
         with self.db.get_session() as session:
             paper = session.get(Paper, bibcode)
-            if paper:
-                session.delete(paper)
-                session.commit()
-                return True
-            return False
+            if not paper:
+                return False
+
+            # 1. Delete PDF file
+            if paper.pdf_path and Path(paper.pdf_path).exists():
+                try:
+                    Path(paper.pdf_path).unlink()
+                except Exception as e:
+                    print(f"Error deleting PDF file: {e}")
+
+            # 2. Delete Vector Embeddings
+            try:
+                # Delete abstract embedding
+                self.vector_store.delete_paper(bibcode)
+                # Delete PDF chunks
+                self.vector_store.delete_pdf(bibcode)
+                # Delete Note embedding
+                self.vector_store.delete_note(bibcode)
+            except Exception as e:
+                print(f"Error deleting embeddings: {e}")
+
+            # 3. Delete Note
+            from src.db.models import Note
+            stmt = select(Note).where(Note.bibcode == bibcode)
+            note = session.exec(stmt).first()
+            if note:
+                session.delete(note)
+
+            # 4. Delete Citations
+            from src.db.models import Citation
+            citations = session.exec(
+                select(Citation).where(
+                    (Citation.citing_bibcode == bibcode) | 
+                    (Citation.cited_bibcode == bibcode)
+                )
+            ).all()
+            for citation in citations:
+                session.delete(citation)
+
+            # 5. Delete Project Associations
+            from src.db.models import PaperProject
+            projects = session.exec(
+                select(PaperProject).where(PaperProject.bibcode == bibcode)
+            ).all()
+            for proj in projects:
+                session.delete(proj)
+
+            # 6. Delete Paper
+            session.delete(paper)
+            session.commit()
+            return True
 
     def count(self) -> int:
         """Count total papers in database."""
@@ -232,6 +287,24 @@ class PaperRepository:
     def delete_all(self) -> int:
         """Delete all papers from the database. Returns count of deleted papers."""
         with self.db.get_session() as session:
+            # 1. Clean up PDFs first
+            papers = session.exec(select(Paper)).all()
+            for paper in papers:
+                if paper.pdf_path and Path(paper.pdf_path).exists():
+                    try:
+                        Path(paper.pdf_path).unlink()
+                    except Exception as e:
+                        print(f"Error deleting PDF file {paper.pdf_path}: {e}")
+
+            # 2. Clear Vector Store
+            try:
+                self.vector_store.clear()          # abstracts
+                self.vector_store.clear_pdfs()     # PDF chunks
+                self.vector_store.clear_notes()    # notes
+            except Exception as e:
+                print(f"Error clearing vector store: {e}")
+
+            # 3. Clean up database records
             # First delete all paper-project associations
             stmt = select(PaperProject)
             associations = session.exec(stmt).all()
@@ -244,8 +317,13 @@ class PaperRepository:
             for citation in citations:
                 session.delete(citation)
 
+            # Delete all notes
+            from src.db.models import Note
+            notes = session.exec(select(Note)).all()
+            for note in notes:
+                session.delete(note)
+
             # Finally delete all papers
-            papers = session.exec(select(Paper)).all()
             count = len(papers)
             for paper in papers:
                 session.delete(paper)

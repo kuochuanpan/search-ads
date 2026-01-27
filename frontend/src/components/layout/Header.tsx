@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, Settings, User, ChevronDown, Plus, Trash2, Check, X, FolderOpen, Save, Loader2 } from 'lucide-react'
+import { Sparkles, User, ChevronDown, Plus, Trash2, Check, X, FolderOpen } from 'lucide-react'
 import { useActiveProject } from '@/store'
 import { useProjects, useCreateProject, useDeleteProject } from '@/hooks/useProjects'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+
 
 export function Header() {
   const { data: projects } = useProjects()
@@ -17,16 +17,12 @@ export function Header() {
   const [newProjectName, setNewProjectName] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  // User profile panel state
-  const [userPanelOpen, setUserPanelOpen] = useState(false)
-  const [authorNames, setAuthorNames] = useState('')
-  const [authorNamesLoading, setAuthorNamesLoading] = useState(false)
-  const [authorNamesSaving, setAuthorNamesSaving] = useState(false)
-  const [authorNamesSaved, setAuthorNamesSaved] = useState(false)
+  // User menu state
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const userPanelRef = useRef<HTMLDivElement>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -51,35 +47,18 @@ export function Header() {
     }
   }, [isCreating])
 
-  // Close user panel on click outside
+  // Close user menu on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (userPanelRef.current && !userPanelRef.current.contains(e.target as Node)) {
-        setUserPanelOpen(false)
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
       }
     }
-    if (userPanelOpen) {
+    if (userMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside)
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [userPanelOpen])
-
-  // Fetch author names when panel opens
-  useEffect(() => {
-    if (userPanelOpen) {
-      setAuthorNamesLoading(true)
-      api.getAuthorNames()
-        .then((data) => {
-          setAuthorNames(data.author_names)
-        })
-        .catch((e) => {
-          console.error('Failed to fetch author names:', e)
-        })
-        .finally(() => {
-          setAuthorNamesLoading(false)
-        })
-    }
-  }, [userPanelOpen])
+  }, [userMenuOpen])
 
   const handleCreate = async () => {
     const name = newProjectName.trim()
@@ -115,20 +94,6 @@ export function Header() {
     } else if (e.key === 'Escape') {
       setIsCreating(false)
       setNewProjectName('')
-    }
-  }
-
-  const handleSaveAuthorNames = async () => {
-    setAuthorNamesSaving(true)
-    setAuthorNamesSaved(false)
-    try {
-      await api.updateAuthorNames(authorNames)
-      setAuthorNamesSaved(true)
-      setTimeout(() => setAuthorNamesSaved(false), 2000)
-    } catch (e) {
-      console.error('Failed to save author names:', e)
-    } finally {
-      setAuthorNamesSaving(false)
     }
   }
 
@@ -289,70 +254,33 @@ export function Header() {
           </div>
         </div>
 
-        {/* Settings Button */}
-        <Button variant="ghost" size="sm">
-          <Settings size={18} />
-        </Button>
-
         {/* User Menu */}
-        <div className="relative" ref={userPanelRef}>
+        <div className="relative" ref={userMenuRef}>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setUserPanelOpen(!userPanelOpen)}
-            className={cn(userPanelOpen && 'bg-secondary')}
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className={cn(userMenuOpen && 'bg-secondary')}
           >
             <User size={18} />
           </Button>
 
-          {userPanelOpen && (
-            <div className="absolute right-0 top-full mt-1 w-80 bg-card border rounded-lg shadow-lg p-4 z-50">
-              <h3 className="font-medium text-sm mb-3">Author Profile</h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">
-                    Your Author Names
-                  </label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Enter your name variations separated by semicolons for auto-detection of your papers.
-                  </p>
-                  {authorNamesLoading ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 size={16} className="animate-spin text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <textarea
-                      value={authorNames}
-                      onChange={(e) => setAuthorNames(e.target.value)}
-                      placeholder="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
-                      className="w-full h-20 px-2 py-1.5 text-sm border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                    />
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    {authorNamesSaved && (
-                      <span className="text-green-600">Saved successfully!</span>
-                    )}
-                  </p>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSaveAuthorNames}
-                    disabled={authorNamesLoading || authorNamesSaving}
-                    className="gap-1"
-                  >
-                    {authorNamesSaving ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Save size={14} />
-                    )}
-                    Save
-                  </Button>
-                </div>
-              </div>
+          {userMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-48 bg-card border rounded-lg shadow-lg py-1 z-50">
+              <a
+                href="/settings"
+                onClick={() => setUserMenuOpen(false)}
+                className="block w-full px-4 py-2 text-sm text-left hover:bg-secondary transition-colors"
+              >
+                Profile Settings
+              </a>
+              <a
+                href="/settings"
+                onClick={() => setUserMenuOpen(false)}
+                className="block w-full px-4 py-2 text-sm text-left hover:bg-secondary transition-colors"
+              >
+                API Keys
+              </a>
             </div>
           )}
         </div>

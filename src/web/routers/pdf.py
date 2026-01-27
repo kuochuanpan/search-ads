@@ -69,6 +69,9 @@ async def download_pdf(
         # Download PDF synchronously for now
         pdf_path = pdf_handler.download(paper)
         if pdf_path:
+            # Update paper with PDF path
+            paper.pdf_path = str(pdf_path)
+            paper_repo.add(paper)
             return MessageResponse(message=f"PDF downloaded successfully to {pdf_path}")
         else:
             raise HTTPException(status_code=404, detail="PDF not available for this paper")

@@ -363,7 +363,8 @@ async def ask_about_paper(
             if pdf_results:
                 sources_used.append("pdf")
                 context_parts.append("\nRelevant excerpts from paper:")
-                for _, _, _, text in pdf_results:
+                for result in pdf_results:
+                    text = result.get("document")
                     if text:
                         context_parts.append(f"\n- {text[:500]}")
         except Exception as e:

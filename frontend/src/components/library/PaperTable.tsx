@@ -5,6 +5,7 @@ import {
   useReactTable,
   SortingState,
   getSortedRowModel,
+  OnChangeFn,
 } from '@tanstack/react-table'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -31,15 +32,18 @@ import { Paper, api } from '@/lib/api'
 import { formatAuthorList, cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/Icon'
 import { usePaperSelection } from '@/store'
-import { useToggleMyPaper, useDeletePaper, useDownloadPdf, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
+import { useToggleMyPaper, useDeletePaper, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
 import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useNote } from '@/hooks/useNotes'
 import { ReferencesModal } from './ReferencesModal'
+import { DownloadPdfButton } from './DownloadPdfButton'
 import { Loader2 } from 'lucide-react'
 
 interface PaperTableProps {
   data: Paper[]
   onRowClick?: (paper: Paper) => void
+  sorting?: SortingState
+  onSortingChange?: OnChangeFn<SortingState>
 }
 
 interface ContextMenuState {
@@ -83,20 +87,27 @@ function NotePreview({ bibcode }: { bibcode: string }) {
   )
 }
 
-export function PaperTable({ data, onRowClick }: PaperTableProps) {
+export function PaperTable(props: PaperTableProps) {
+  const { data, onRowClick } = props
   const navigate = useNavigate()
   const { isSelected, toggleSelection, selectAll, deselectAll } = usePaperSelection()
   const toggleMyPaper = useToggleMyPaper()
+
   const deletePaper = useDeletePaper()
-  const downloadPdf = useDownloadPdf()
   const openPdf = useOpenPdf()
   const embedPdf = useEmbedPdf()
   const { data: projectsData } = useProjects()
   const addPaperToProject = useAddPaperToProject()
 
-  const [sorting, setSorting] = useState<SortingState>([
+
+
+  // Use controlled sorting if provided, otherwise local state
+  const [localSorting, setLocalSorting] = useState<SortingState>([
     { id: 'updated_at', desc: true },
   ])
+
+  const sorting = props.sorting ?? localSorting
+  const setSorting = props.onSortingChange ?? setLocalSorting
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     isOpen: false,
@@ -439,23 +450,7 @@ export function PaperTable({ data, onRowClick }: PaperTableProps) {
           )
         } else if (pdf_url) {
           // Has URL but not downloaded - click to download
-          return (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                downloadPdf.mutate(paper.bibcode)
-              }}
-              className="hover:scale-110 transition-transform"
-              title="Download PDF"
-              disabled={downloadPdf.isPending}
-            >
-              {downloadPdf.isPending ? (
-                <Loader2 size={16} className="animate-spin text-muted-foreground" />
-              ) : (
-                <Icon icon={Download} size={16} className="text-muted-foreground hover:text-primary" />
-              )}
-            </button>
-          )
+          return <DownloadPdfButton bibcode={paper.bibcode} />
         }
         // No PDF available
         return (

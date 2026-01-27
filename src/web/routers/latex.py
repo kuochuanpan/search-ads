@@ -247,7 +247,10 @@ async def get_citation_suggestions(
                         n_results=request.limit * 2,
                     )
 
-                    for bibcode, distance, metadata, document in results:
+                    for result in results:
+                        bibcode = result["bibcode"]
+                        distance = result["distance"]
+                        
                         if bibcode in seen_bibcodes:
                             continue
                         seen_bibcodes.add(bibcode)

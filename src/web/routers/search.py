@@ -73,27 +73,81 @@ async def search_semantic(
     try:
         results = vector_store.search(
             request.query,
-            n_results=request.limit,
+            n_results=request.limit * 2,  # Fetch more to allow for re-ranking
             min_year=min_year,
             min_citations=min_citations,
         )
 
-        search_results = []
-        for bibcode, distance, metadata, document in results:
-            search_results.append(SemanticSearchResult(
+        if not results:
+            return SearchResponse(query=request.query, results=[], count=0)
+
+        # Extract bibcodes to fetch metadata needed for re-ranking
+        bibcodes = [r["bibcode"] for r in results]
+        
+        # Get paper details (for is_my_paper)
+        # We need to query the repo directly or assume metadata has it?
+        # Vector store metadata stores 'is_my_paper' only if we added it. 
+        # Current implementation of embed_paper in vector_store.py doesn't store is_my_paper in metadata default.
+        # So we query repo.
+        from src.db.repository import get_db, PaperRepository, NoteRepository
+        
+        # We'll use a new session to be safe, or reuse dependencies if cleaner. 
+        # Since this is inside router, let's just use the dependencies if possible, but 
+        # vector_store doesn't give us repo.
+        # Let's instantiate repo here efficiently or fetch properties.
+        
+        # Optimization: Batch fetch is better, but for now simple loop or `in` query
+        repo = PaperRepository()
+        note_repo = NoteRepository()
+
+        # Re-score results
+        scored_results = []
+        for result in results:
+            bibcode = result["bibcode"]
+            raw_distance = result["distance"] or 1.0 # Handle None
+            
+            # 1. Fetch Paper status
+            paper = repo.get(bibcode)
+            is_my_paper = paper.is_my_paper if paper else False
+            
+            # 2. Check for Notes
+            has_note = note_repo.get(bibcode) is not None
+            
+            # Apply Weights (lower distance is better)
+            # My Paper: 20% boost (0.8 multiplier)
+            # Has Note: 10% boost (0.9 multiplier)
+            
+            multiplier = 1.0
+            if is_my_paper:
+                multiplier *= 0.8
+            if has_note:
+                multiplier *= 0.9
+                
+            new_distance = raw_distance * multiplier
+            
+            search_results = SemanticSearchResult(
                 bibcode=bibcode,
-                distance=distance,
-                title=metadata.get("title"),
-                year=metadata.get("year"),
-                first_author=metadata.get("first_author"),
-            ))
+                distance=new_distance,
+                title=result["metadata"].get("title"),
+                year=result["metadata"].get("year"),
+                first_author=result["metadata"].get("first_author"),
+            )
+            scored_results.append(search_results)
+
+        # Re-sort by new distance
+        scored_results.sort(key=lambda x: x.distance)
+        
+        # Trim to requested limit
+        final_results = scored_results[:request.limit]
 
         return SearchResponse(
             query=request.query,
-            results=search_results,
-            count=len(search_results),
+            results=final_results,
+            count=len(final_results),
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
@@ -115,10 +169,10 @@ async def search_pdf(
             "query": request.query,
             "results": [
                 {
-                    "bibcode": r[0],
-                    "distance": r[1],
-                    "metadata": r[2],
-                    "text_snippet": r[3][:500] if r[3] else None,  # Truncate text
+                    "bibcode": r["bibcode"],
+                    "distance": r["distance"],
+                    "metadata": r.get("metadata", {}),
+                    "text_snippet": r["document"][:500] if r.get("document") else None,  # Truncate text
                 }
                 for r in results
             ],

@@ -79,7 +79,28 @@ The web UI uses a **persistent sidebar navigation** with React Router for client
 
 ## Core Features
 
+### 0. Onboarding & Setup
+
+The first run experience determines user retention. The app handles setup gracefully.
+
+**Zero State / Setup Wizard:**
+
+1.  **Welcome Screen**: Brief intro to the tool.
+2.  **API Key Setup**: Prompt for ADS and optional LLM keys.
+3.  **Identity Setup**: "What are your name variations?" (Critical for "My Papers" feature).
+    *   *Input*: `Pan, K.-C.; Pan, Kuo-Chuan`
+4.  **Initial Seed**:
+    *   Option A: "Import from BibTeX" (drag & drop)
+    *   Option B: "Key Papers" (enter 1-3 bibcodes to start graph)
+    *   Option C: "Start Empty"
+
+**Empty States:**
+*   **Library**: "Your library is empty. Try searching for a topic or importing a bibcode."
+*   **Search**: "Enter a query to find papers."
+*   **Graph**: "Add papers to your library to see connections."
+
 ### 1. Smart Library Dashboard
+
 
 The home view shows your research at a glance with intelligent summaries.
 
@@ -583,6 +604,7 @@ PDFs open in your system's default viewer (Preview on macOS, Adobe Reader, etc.)
 - **Familiar interface**: Users know their PDF reader
 - **No development cost**: Focus engineering effort elsewhere
 - **Annotations persist**: Stored in the PDF file itself
+- **Technical Note**: "Open" triggers an API call (`/api/pdf/open`) which launches the system viewer process on the host machine. It does NOT try to open `file://` links in the browser.
 
 **Features:**
 
@@ -849,6 +871,11 @@ Flexible ways to get papers into your library.
 │  Default Project:    [None ▾]                                               │
 │  PDF Storage:        ~/.search-ads/pdfs/  [Change]                          │
 │                                                                             │
+│  User Profile & Identity                                                    │
+│  ───────────────────────────────────────────────────────────────────────    │
+│  My Author Names:    [Pan, K.-C.; Pan, Kuo-Chuan]                           │
+│  (Used to automatically tag "My Papers" in the library)                     │
+│                                                                             │
 │  API Keys                                                                   │
 │  ───────────────────────────────────────────────────────────────────────    │
 │  ADS API Key:        [••••••••••••••••••••] [Show] [Test]                   │
@@ -898,6 +925,20 @@ Flexible ways to get papers into your library.
 │                                                                             │
 └──────────────────────────────────────────────────────────────────────────���──┘
 ```
+
+### 11.1 Integration Notes: User Panel vs. Settings
+
+*   **Current Architecture**:
+    *   **User Icon**: Opens a quick-access panel (currently holds Author Names).
+    *   **Settings Page**: Holds global config (API keys, theme).
+*   **Integration Plan**:
+    *   **Consolidation**: Move the "Author Names" input to the **Settings Page** (under "Identity") as the source of truth.
+    *   **User Panel**: Redesign the top-right User Icon to be a **Navigational Menu**:
+        *   `Profile Settings` -> Navigates to `/settings`
+        *   `API Keys` -> Navigates to `/settings`
+        *   (Future) `Sign Out`
+    *   This removes the conflict where "User Info" is isolated from "App Settings" and unifies identity management.
+
 
 ---
 
@@ -1021,6 +1062,22 @@ Power users should be able to do everything without touching the mouse.
 
 ---
 
+## Error Handling & System Feedback
+
+1.  **Transient Errors** (Network glitches, copy failed):
+    *   **UI**: Toast notification (bottom right). Auto-dismiss after 3s.
+    *   *Example*: "Failed to copy citation to clipboard."
+
+2.  **Persistent Errors** (API Key missing, Rate limited):
+    *   **UI**: Dismissible alert banner at top of view.
+    *   *Example*: "ADS API Key is missing. [Go to Settings]"
+
+3.  **Async/Long-Running Ops** (Embedding 1000 papers, Batch Import):
+    *   **UI**: Global status indicator (spinner/progress bar) in header or sidebar bottom.
+    *   *Detail*: "Embedding papers: 45/120..."
+
+---
+
 ## Implementation Phases
 
 ### Phase 4.1: Foundation
@@ -1038,6 +1095,8 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Note Editor Modal (add/edit/delete notes with markdown support)
 - [ ] Note preview on hover in Library view
 - [ ] Project dropdown in header with CRUD operations
+- [ ] **Onboarding Flow**: Welcome screen, API Key entry, "My Author Names" setup
+- [ ] **Settings Page**: Manage "My Author Names", API Keys, Defaults
 
 **Deliverable**: Functional paper library browser with full table features, notes, and "my papers" tracking
 
@@ -1164,6 +1223,7 @@ Power users should be able to do everything without touching the mouse.
 - [ ] Gap analysis (missing important papers)
 - [ ] Activity timeline and research progress tracking
 - [ ] Zotero/Mendeley sync integration
+- [ ] **Writing Assistant Upgrade**: Direct import/scanning of `.tex` files (instead of copy-paste)
 
 ---
 

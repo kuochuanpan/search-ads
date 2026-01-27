@@ -1,11 +1,11 @@
-import { useState } from 'react'
-import { Check, AlertCircle, RefreshCw, Trash2, Database, Key, Palette, BookOpen } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Check, AlertCircle, RefreshCw, Trash2, Database, Key, Palette, BookOpen, User, Save, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
 import { useStats } from '@/hooks/useStats'
 import { api } from '@/lib/api'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 export function SettingsPage() {
   const { data: stats } = useStats()
@@ -18,8 +18,34 @@ export function SettingsPage() {
     queryFn: () => api.getVectorStats(),
   })
 
+  const queryClient = useQueryClient()
+
   const [testingApi, setTestingApi] = useState<string | null>(null)
   const [apiTestResult, setApiTestResult] = useState<{ service: string; valid: boolean; message: string } | null>(null)
+
+  // Author Names State
+  const [authorNames, setAuthorNames] = useState('')
+  const [authorNamesSaved, setAuthorNamesSaved] = useState(false)
+
+  // Sync author names from settings when loaded
+  useEffect(() => {
+    if (settings?.my_author_names) {
+      setAuthorNames(settings.my_author_names)
+    }
+  }, [settings])
+
+  const updateAuthorNames = useMutation({
+    mutationFn: (names: string) => api.updateAuthorNames(names),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      setAuthorNamesSaved(true)
+      setTimeout(() => setAuthorNamesSaved(false), 2000)
+    },
+  })
+
+  const handleSaveAuthorNames = () => {
+    updateAuthorNames.mutate(authorNames)
+  }
 
   const handleTestApi = async (service: 'ads' | 'openai' | 'anthropic') => {
     setTestingApi(service)
@@ -40,6 +66,44 @@ export function SettingsPage() {
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="text-muted-foreground">Configure your Search-ADS preferences</p>
       </div>
+
+      {/* User Profile & Identity */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Icon icon={User} size={20} className="text-primary" />
+          <h2 className="font-medium">User Profile & Identity</h2>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="font-medium block mb-1">
+              My Author Names
+            </label>
+            <p className="text-sm text-muted-foreground mb-3">
+              Enter your name variations separated by semicolons (e.g., "Pan, K.-C.; Pan, Kuo-Chuan").
+              These are used to automatically tag your papers in the library.
+            </p>
+            <textarea
+              value={authorNames}
+              onChange={(e) => setAuthorNames(e.target.value)}
+              placeholder="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
+              className="w-full h-24 px-3 py-2 text-sm border rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {authorNamesSaved && <span className="text-green-600 flex items-center gap-1"><Check size={14} /> Saved successfully</span>}
+            </p>
+            <Button
+              onClick={handleSaveAuthorNames}
+              disabled={updateAuthorNames.isPending}
+              className="gap-2"
+            >
+              {updateAuthorNames.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* General */}
       <Card className="p-6">
