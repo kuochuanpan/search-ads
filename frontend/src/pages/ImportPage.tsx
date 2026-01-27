@@ -112,7 +112,13 @@ export function ImportPage() {
           }) : null)
         } else if (event.type === 'result' && event.data) {
           setBatchResult(event.data)
-          if (event.data.success) setBatchText('')
+          if (event.data.success) {
+            setBatchText('')
+            // Invalidate queries to refresh library view
+            queryClient.invalidateQueries({ queryKey: ['papers'] })
+            queryClient.invalidateQueries({ queryKey: ['stats'] })
+            queryClient.invalidateQueries({ queryKey: ['projects'] })
+          }
           // Keep progress visible for a moment or let user dismiss? 
           // We'll leave it to show logs until user starts new action or we can clear it.
         }
@@ -135,7 +141,12 @@ export function ImportPage() {
     try {
       const result = await api.importBibtex(bibtexContent, selectedProject || undefined)
       setBibtexResult({ success: result.success, imported: result.imported, failed: result.failed })
-      if (result.success) setBibtexContent('')
+      if (result.success) {
+        setBibtexContent('')
+        queryClient.invalidateQueries({ queryKey: ['papers'] })
+        queryClient.invalidateQueries({ queryKey: ['stats'] })
+        queryClient.invalidateQueries({ queryKey: ['projects'] })
+      }
     } catch (e: any) {
       setBibtexResult({ success: false, imported: 0, failed: 0 })
     } finally {

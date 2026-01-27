@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useNavigate, useSearch, useLocation } from '@tanstack/react-router'
 import { Plus, Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
@@ -13,6 +13,7 @@ import { useStats } from '@/hooks/useStats'
 
 export function LibraryPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const searchParams = useSearch({ strict: false })
   const { project } = useActiveProject()
   const { count: selectedCount, selectedBibcodes } = usePaperSelection()
@@ -149,6 +150,12 @@ export function LibraryPage() {
 
   // Restore scroll position
   useEffect(() => {
+    // If we have a reset signal, clear storage and don't restore
+    if ((location.state as any)?.resetScroll) {
+      sessionStorage.removeItem('library_scroll_y')
+      return
+    }
+
     if (!isLoading && papers.length > 0) {
       const savedScroll = sessionStorage.getItem('library_scroll_y')
       if (savedScroll) {
@@ -160,7 +167,7 @@ export function LibraryPage() {
         }, 0)
       }
     }
-  }, [isLoading, papers.length])
+  }, [isLoading, papers.length, location.state])
 
   const handleRowClick = useCallback((paper: Paper) => {
     // Save scroll position

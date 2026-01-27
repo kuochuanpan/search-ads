@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Search, Sparkles, BookOpen, FileText, Library, Plus, Check, ChevronDown, ChevronUp, ExternalLink, Copy, FileCode } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -47,6 +48,7 @@ export function SearchPage() {
     natural?: { message: string }
   }>({})
 
+  const queryClient = useQueryClient()
   const { data: projects } = useProjects()
   const addToProject = useAddPapersToProject()
   const aiSearch = useAISearch()
@@ -214,6 +216,10 @@ export function SearchPage() {
 
       // Mark the paper as added locally to update the UI without re-running search
       setAddedToLibrary(prev => new Set(prev).add(selectedForAdd.bibcode))
+
+      // Invalidate queries to refresh library view
+      queryClient.invalidateQueries({ queryKey: ['papers'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
 
       setShowAddModal(false)
       setSelectedForAdd(null)

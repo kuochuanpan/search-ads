@@ -98,7 +98,11 @@ export function Sidebar() {
               <button
                 key={item.path}
                 onClick={() => {
-                  navigate({ to: item.path as any })
+                  if (item.path === '/library') {
+                    navigate({ to: item.path, state: { resetScroll: true } as any })
+                  } else {
+                    navigate({ to: item.path as any })
+                  }
                   // Auto-collapse on mobile
                   if (window.innerWidth < 1024) {
                     setCollapsed(true)
