@@ -848,24 +848,7 @@ export const api = {
     min_citations?: number
     use_llm?: boolean
   }) => {
-    // In Tauri, use non-streaming endpoint
-    if (isTauri) {
-      return (async function* () {
-        yield { type: 'progress', message: 'Searching with AI...' } as any
-        try {
-          const result = await api.aiSearch(params)
-          // Yield analysis first if present
-          if (result.ai_analysis) {
-            yield { type: 'analysis', data: result.ai_analysis } as any
-          }
-          // Yield the whole result package as 'result' type (SearchPage expects this structure too)
-          yield { type: 'result', data: result } as any
-          yield { type: 'done', total: result.total_count } as any
-        } catch (e: any) {
-          yield { type: 'error', message: e.message || 'AI Search failed' } as any
-        }
-      })()
-    }
+
 
     return streamRequest<{
       query: string
