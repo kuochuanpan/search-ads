@@ -1,4 +1,28 @@
+// Detect if running in Tauri (desktop app) or browser
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+
+console.log('[API] Running in Tauri:', isTauri);
+
+// In browser, use Vite's dev proxy
 const API_BASE = '/api'
+
+// Tauri invoke function - dynamically imported
+let tauriApi: { invoke: any, listen: any } | null = null;
+
+async function getTauri() {
+  if (!isTauri) return null;
+  if (tauriApi) return tauriApi;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { listen } = await import('@tauri-apps/api/event');
+    tauriApi = { invoke, listen };
+    console.log('[API] Tauri interactors loaded');
+    return tauriApi;
+  } catch (e) {
+    console.error('[API] Failed to load Tauri interactors:', e);
+    return null;
+  }
+}
 
 export interface Paper {
   bibcode: string
@@ -86,6 +110,12 @@ export interface SettingsResponse {
   openai_model: string
   anthropic_model: string
   my_author_names: string
+}
+
+export interface ApiKeysRequest {
+  ads_api_key?: string
+  openai_api_key?: string
+  anthropic_api_key?: string
 }
 
 export interface AuthorNamesResponse {
@@ -249,6 +279,46 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const tauri = await getTauri();
+
+  // Use Tauri command proxy when in Tauri
+  if (tauri) {
+    const { invoke } = tauri;
+    const apiPath = `/api${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+
+    console.log(`[API] Tauri ${method} ${apiPath}`);
+
+    try {
+      let result: unknown;
+      switch (method) {
+        case 'GET':
+          result = await invoke('api_get', { path: apiPath });
+          break;
+        case 'POST':
+          result = await invoke('api_post', { path: apiPath, body });
+          break;
+        case 'PUT':
+          result = await invoke('api_put', { path: apiPath, body });
+          break;
+        case 'PATCH':
+          result = await invoke('api_patch', { path: apiPath, body });
+          break;
+        case 'DELETE':
+          result = await invoke('api_delete', { path: apiPath });
+          break;
+        default:
+          throw new Error(`Unsupported method: ${method}`);
+      }
+      return result as T;
+    } catch (e) {
+      console.error('[API] Tauri request failed:', e);
+      throw new Error(String(e));
+    }
+  }
+
+  // Browser mode - use fetch with proxy
   const url = `${API_BASE}${path}`
   const response = await fetch(url, {
     headers: {
@@ -266,7 +336,88 @@ async function request<T>(
   return response.json()
 }
 
+// Stream requests - use Rust-side streaming proxy in Tauri
 async function* streamRequest<T>(path: string, options: RequestInit = {}): AsyncGenerator<NDJSONStreamResult<T>> {
+  const tauri = await getTauri();
+
+  // In Tauri, use the api_stream command and listen for events
+  if (tauri) {
+    const { invoke, listen } = tauri;
+    console.log('[API] Stream request in Tauri - using api_stream command');
+
+    // Generate unique event ID
+    const eventId = crypto.randomUUID();
+    const apiPath = `/api${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+
+    // Create a buffer for incoming chunks
+    let buffer = '';
+    const queue: any[] = [];
+    let resolveNext: ((value?: any) => void) | null = null;
+    let isDone = false;
+    let error: Error | null = null;
+
+    // Set up event listener
+    const unlisten = await listen(`stream-event-${eventId}`, (event: any) => {
+      const payload = event.payload;
+
+      if (payload.type === 'chunk') {
+        buffer += payload.data;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep last incomplete line
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            queue.push(JSON.parse(line));
+          } catch (e) {
+            console.warn('Failed to parse NDJSON line:', line);
+          }
+        }
+      } else if (payload.type === 'done') {
+        isDone = true;
+      } else if (payload.type === 'error') {
+        error = new Error(payload.message);
+        isDone = true;
+      }
+
+      // Notify waiting consumer
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
+    });
+
+    try {
+      // Start the stream
+      await invoke('api_stream', {
+        path: apiPath,
+        method,
+        body,
+        eventId: eventId
+      });
+
+      // Yield items from queue
+      while (true) {
+        if (queue.length > 0) {
+          yield queue.shift();
+        } else if (isDone) {
+          if (error) throw error;
+          break;
+        } else {
+          // Wait for next event
+          await new Promise<void>(resolve => { resolveNext = resolve; });
+        }
+      }
+    } finally {
+      // Cleanup
+      unlisten();
+    }
+    return;
+  }
+
+  // Browser mode - use fetch with streaming
   const url = `${API_BASE}${path}`
   const response = await fetch(url, {
     headers: {
@@ -541,11 +692,12 @@ export const api = {
       body: JSON.stringify({ query, limit }),
     }),
 
-  streamSearchAds: (query: string, limit = 20) =>
-    streamRequest<SearchResultItem>('/search/ads/stream', {
+  streamSearchAds: (query: string, limit = 20) => {
+    return streamRequest<SearchResultItem>('/search/ads/stream', {
       method: 'POST',
       body: JSON.stringify({ query, limit }),
-    }),
+    })
+  },
 
   // Import
   importFromAds: (
@@ -577,8 +729,8 @@ export const api = {
       max_hops?: number
       download_pdf?: boolean
     }
-  ) =>
-    streamRequest<{
+  ) => {
+    return streamRequest<{
       success: boolean
       bibcode?: string
       title?: string
@@ -590,7 +742,8 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ identifier, ...options }),
       }
-    ),
+    )
+  },
 
   batchImport: (identifiers: string[], project?: string) =>
     request<{ success: boolean; imported: number; failed: number; errors: string[] }>(
@@ -601,14 +754,15 @@ export const api = {
       }
     ),
 
-  streamBatchImport: (identifiers: string[], project?: string) =>
-    streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
+  streamBatchImport: (identifiers: string[], project?: string) => {
+    return streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
       '/import/batch/stream',
       {
         method: 'POST',
         body: JSON.stringify({ identifiers, project }),
       }
-    ),
+    )
+  },
 
   importBibtex: (bibtexContent: string, project?: string, fetchFromAds = true) => {
     const formData = new FormData()
@@ -673,7 +827,9 @@ export const api = {
     }>('/settings/vector-stats'),
 
   testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
-    request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`),
+    request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`, {
+      method: 'POST',
+    }),
 
   getAuthorNames: () => request<AuthorNamesResponse>('/settings/author-names'),
 
@@ -681,6 +837,12 @@ export const api = {
     request<{ message: string; success: boolean }>('/settings/author-names', {
       method: 'PUT',
       body: JSON.stringify({ author_names: authorNames }),
+    }),
+
+  updateApiKeys: (keys: ApiKeysRequest) =>
+    request<{ message: string; success: boolean }>('/settings/api-keys', {
+      method: 'PUT',
+      body: JSON.stringify(keys),
     }),
 
   updateModels: (openai_model: string, anthropic_model: string) =>
@@ -699,8 +861,10 @@ export const api = {
     min_year?: number
     min_citations?: number
     use_llm?: boolean
-  }) =>
-    streamRequest<{
+  }) => {
+
+
+    return streamRequest<{
       query: string
       results: SearchResultItem[]
       ai_analysis?: {
@@ -717,7 +881,8 @@ export const api = {
     }>('/ai/search/stream', {
       method: 'POST',
       body: JSON.stringify(params),
-    }),
+    })
+  },
 
   aiSearch: (params: {
     query: string

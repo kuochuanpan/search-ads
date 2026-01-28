@@ -1,15 +1,23 @@
 import { useNavigate } from '@tanstack/react-router'
-import { BookOpen, Search, Star, FileText, Network, TrendingUp } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { BookOpen, Search, Star, FileText, Network, TrendingUp, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
 import { useStats } from '@/hooks/useStats'
 import { usePapers } from '@/hooks/usePapers'
+import { api } from '@/lib/api'
 
 export function HomePage() {
   const navigate = useNavigate()
   const { data: stats } = useStats()
   const { data: recentPapers } = usePapers({ limit: 5, sort_by: 'updated_at', sort_order: 'desc' })
   const { data: myPapers } = usePapers({ limit: 5, is_my_paper: true, sort_by: 'citation_count', sort_order: 'desc' })
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+  })
 
   const greeting = () => {
     const hour = new Date().getHours()
@@ -27,6 +35,26 @@ export function HomePage() {
           {stats?.total_projects ? ` across ${stats.total_projects} projects` : ''}.
         </h1>
       </div>
+
+      {/* Missing Keys Warning */}
+      {settings && !settings.has_ads_key && (
+        <Card className="p-4 border-amber-500/50 bg-amber-50 dark:bg-amber-900/10 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400">
+              <Icon icon={AlertCircle} size={24} />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-800 dark:text-amber-200">ADS API Key Missing</h3>
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                You need to configure your ADS API key to search for papers.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => navigate({ to: '/settings' })}>
+              Configure API Keys
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Quick Search */}
       <Card className="p-4">

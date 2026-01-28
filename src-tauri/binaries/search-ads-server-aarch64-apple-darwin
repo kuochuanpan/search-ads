@@ -1,0 +1,28 @@
+#!/bin/bash
+# Wrapper to launch the PyInstaller onedir application from Resources
+
+# Resolve resource path relative to this script
+# Use simple relative path logic assuming standard bundle structure
+# Tauri bundle structure:
+# Contents/MacOS/search-ads-server-target-triple (this script)
+# Contents/Resources/resources/search-ads-server/search-ads-server (executable)
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Try standard macOS bundle path
+EXEC_PATH="$SCRIPT_DIR/../Resources/resources/search-ads-server/search-ads-server"
+
+# If not found (e.g. dev mode), try relative to src-tauri
+if [ ! -f "$EXEC_PATH" ]; then
+    # In dev mode: src-tauri/binaries/wrapper -> src-tauri/resources/search-ads-server/server
+    EXEC_PATH="$SCRIPT_DIR/../resources/search-ads-server/search-ads-server"
+fi
+
+if [ ! -f "$EXEC_PATH" ]; then
+    echo "Error: Could not find search-ads-server executable at $EXEC_PATH" >&2
+    echo "Script dir: $SCRIPT_DIR" >&2
+    exit 1
+fi
+
+# Execute the actual binary, passing all arguments
+exec "$EXEC_PATH" "$@"

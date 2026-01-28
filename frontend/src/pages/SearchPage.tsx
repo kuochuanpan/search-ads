@@ -112,6 +112,7 @@ export function SearchPage() {
     // Keyword/Similar mode: Use Streaming
     setIsStreaming(true)
     setStreamResults([])
+    setAiAnalysis(null)
     setSearchProgress({})
 
     // Create promises for each scope

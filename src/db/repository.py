@@ -22,6 +22,8 @@ class Database:
             f"sqlite:///{self.db_path}",
             echo=False,
             connect_args={"check_same_thread": False},
+            pool_size=20,
+            max_overflow=40,
         )
 
     def create_tables(self):
@@ -80,6 +82,8 @@ class PaperRepository:
         """
         should_embed = embed if embed is not None else self.auto_embed
 
+        note_content = None
+
         with self.db.get_session() as session:
             # Check if exists
             existing = session.get(Paper, paper.bibcode)
@@ -99,12 +103,22 @@ class PaperRepository:
                 session.refresh(paper)
                 result = paper
 
+            # Fetch note content inside session if needed
+            if should_embed:
+                from src.db.models import Note
+                stmt = select(Note).where(Note.bibcode == result.bibcode)
+                note = session.exec(stmt).first()
+                if note:
+                    note_content = note.content
+
         # Embed in vector store if requested
-        if should_embed and result.abstract:
+        if should_embed:
             try:
-                self.vector_store.embed_paper(result)
+                self.vector_store.embed_paper(result, note_content=note_content)
             except Exception as e:
                 # Don't fail the add if embedding fails
+                import logging
+                logging.error(f"Failed to embed paper {result.bibcode}: {e}", exc_info=True)
                 print(f"Warning: Failed to embed paper {result.bibcode}: {e}")
 
         return result
@@ -282,6 +296,13 @@ class PaperRepository:
                 paper.updated_at = datetime.utcnow()
                 session.add(paper)
                 session.commit()
+                
+                # Re-embed if updated
+                try:
+                     self.vector_store.embed_paper(paper)
+                except:
+                     pass
+                     
                 return True
             return False
 
@@ -646,6 +667,8 @@ class NoteRepository:
         """
         should_embed = embed if embed is not None else self.auto_embed
 
+        paper_to_embed = None
+
         with self.db.get_session() as session:
             # Check if note exists for this paper
             stmt = select(Note).where(Note.bibcode == bibcode)
@@ -667,12 +690,25 @@ class NoteRepository:
                 session.refresh(note)
                 result = note
 
+            # Fetch paper inside session if needed
+            if should_embed:
+                stmt_paper = select(Paper).where(Paper.bibcode == bibcode)
+                paper_to_embed = session.exec(stmt_paper).first()
+                # Trigger a load of attributes if needed, though simple selection usually suffices
+                if paper_to_embed:
+                    _ = paper_to_embed.title
+
         # Embed in vector store if requested
         if should_embed:
             try:
+                if paper_to_embed:
+                    # Re-embed paper with new note content
+                    self.vector_store.embed_paper(paper_to_embed, note_content=result.content)
+                
+                # Also index note separately if needed (legacy or specific note search)
                 self.vector_store.embed_note(result)
             except Exception as e:
-                print(f"Warning: Failed to embed note for {bibcode}: {e}")
+                print(f"Warning: Failed to embed note/paper for {bibcode}: {e}")
 
         return result
 
@@ -718,6 +754,8 @@ class NoteRepository:
         Returns:
             True if deleted, False if not found
         """
+        paper_to_reembed = None
+        
         with self.db.get_session() as session:
             stmt = select(Note).where(Note.bibcode == bibcode)
             note = session.exec(stmt).first()
@@ -730,8 +768,26 @@ class NoteRepository:
 
                 session.delete(note)
                 session.commit()
-                return True
-            return False
+                
+                # Fetch paper inside session
+                try:
+                    stmt = select(Paper).where(Paper.bibcode == bibcode)
+                    paper_to_reembed = session.exec(stmt).first()
+                    if paper_to_reembed:
+                         _ = paper_to_reembed.title
+                except:
+                    pass
+            else:
+                 return False
+
+        # Re-embed paper without note (outside session)
+        if paper_to_reembed:
+            try:
+                self.vector_store.embed_paper(paper_to_reembed, note_content=None)
+            except:
+                pass
+        
+        return True
 
     def count(self) -> int:
         """Count total notes in database."""

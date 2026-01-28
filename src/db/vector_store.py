@@ -67,14 +67,38 @@ class VectorStore:
                 self._embedding_function = DefaultEmbeddingFunction()
         return self._embedding_function
 
+    def _get_or_create_collection(self, name: str, description: str):
+        """Get or create a collection, handling embedding function conflicts.
+
+        If a collection already exists with a different embedding function,
+        delete it and recreate to avoid conflicts. This means re-indexing is needed.
+        """
+        try:
+            # Try to get or create with our current embedding function
+            return self.client.get_or_create_collection(
+                name=name,
+                embedding_function=self.embedding_function,
+                metadata={"description": description},
+            )
+        except ValueError as e:
+            # Embedding function conflict - collection exists with different embedding
+            if "embedding function" in str(e).lower():
+                # Delete the old collection and create fresh with new embedding
+                self.client.delete_collection(name=name)
+                return self.client.create_collection(
+                    name=name,
+                    embedding_function=self.embedding_function,
+                    metadata={"description": description},
+                )
+            raise
+
     @property
     def abstracts_collection(self):
         """Get or create the abstracts collection."""
         if self._abstracts_collection is None:
-            self._abstracts_collection = self.client.get_or_create_collection(
+            self._abstracts_collection = self._get_or_create_collection(
                 name=self.ABSTRACTS_COLLECTION,
-                embedding_function=self.embedding_function,
-                metadata={"description": "Paper abstracts for semantic search"},
+                description="Paper abstracts for semantic search",
             )
         return self._abstracts_collection
 
@@ -82,10 +106,9 @@ class VectorStore:
     def pdf_collection(self):
         """Get or create the PDF contents collection."""
         if self._pdf_collection is None:
-            self._pdf_collection = self.client.get_or_create_collection(
+            self._pdf_collection = self._get_or_create_collection(
                 name=self.PDF_COLLECTION,
-                embedding_function=self.embedding_function,
-                metadata={"description": "PDF full-text content for semantic search"},
+                description="PDF full-text content for semantic search",
             )
         return self._pdf_collection
 
@@ -93,32 +116,60 @@ class VectorStore:
     def notes_collection(self):
         """Get or create the notes collection."""
         if self._notes_collection is None:
-            self._notes_collection = self.client.get_or_create_collection(
+            self._notes_collection = self._get_or_create_collection(
                 name=self.NOTES_COLLECTION,
-                embedding_function=self.embedding_function,
-                metadata={"description": "User notes for semantic search"},
+                description="User notes for semantic search",
             )
         return self._notes_collection
 
-    def embed_paper(self, paper: Paper) -> bool:
+    def embed_paper(self, paper: Paper, note_content: Optional[str] = None) -> bool:
         """Embed a paper's abstract into the vector store.
 
         Args:
             paper: Paper to embed
+            note_content: Optional content of user notes to include in embedding
 
         Returns:
             True if successful, False if no abstract or already embedded
         """
         if not paper.abstract:
-            return False
+            # Even if no abstract, if we have a note or it's my paper, we might want to embed?
+            # For now, keep requirement for abstract to ensure quality, but maybe relax later.
+            # actually if we have a note, we definitely want to search it.
+            # Let's allow embedding if abstract OR note exists.
+            if not note_content:
+                 return False
+        
+        # We overwrite existing embedding to update metadata/content
+        # So we don't check for existence anymore, we just upsert.
 
-        # Check if already embedded
-        existing = self.abstracts_collection.get(ids=[paper.bibcode])
-        if existing["ids"]:
-            return True  # Already embedded
+        # Prepare authors string
+        authors_str = ""
+        import json
+        if paper.authors:
+            try:
+                authors_list = json.loads(paper.authors)
+                authors_str = ", ".join(authors_list)
+            except:
+                pass
 
-        # Prepare document text (title + abstract for better context)
-        doc_text = f"{paper.title}\n\n{paper.abstract}"
+        # Prepare document text
+        # Format:
+        # Title: ...
+        # Authors: ...
+        # My Paper: Yes/No
+        # Abstract: ...
+        # Notes: ...
+        
+        parts = [
+            f"Title: {paper.title}",
+            f"Authors: {authors_str}" if authors_str else "",
+            f"My Paper: {'Yes' if paper.is_my_paper else 'No'}",
+            f"Abstract: {paper.abstract}" if paper.abstract else "",
+            f"Notes: {note_content}" if note_content else ""
+        ]
+        
+        doc_text = "\n\n".join([p for p in parts if p])
 
         # Prepare metadata
         metadata = {
@@ -127,10 +178,13 @@ class VectorStore:
             "year": paper.year or 0,
             "citation_count": paper.citation_count or 0,
             "first_author": paper.first_author,
+            "is_my_paper": paper.is_my_paper,
+            "has_note": bool(note_content),
+            "authors": authors_str[:1000] if authors_str else "", # Truncate if too long (Chroma limit)
         }
 
-        # Add to collection
-        self.abstracts_collection.add(
+        # Add to collection (upsert)
+        self.abstracts_collection.upsert(
             ids=[paper.bibcode],
             documents=[doc_text],
             metadatas=[metadata],

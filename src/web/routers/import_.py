@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.db.repository import PaperRepository, ProjectRepository
-from src.web.dependencies import get_paper_repo, get_project_repo, get_ads_client, get_pdf_handler
+from src.db.repository import PaperRepository, ProjectRepository, CitationRepository
+from src.web.dependencies import get_paper_repo, get_project_repo, get_ads_client, get_pdf_handler, get_vector_store_dep, get_citation_repo
 from src.web.schemas.paper import PaperRead
 from src.web.schemas.common import MessageResponse
 
@@ -118,7 +118,9 @@ async def import_from_ads_stream(
     ads_client=Depends(get_ads_client),
     paper_repo: PaperRepository = Depends(get_paper_repo),
     project_repo: ProjectRepository = Depends(get_project_repo),
+    citation_repo: CitationRepository = Depends(get_citation_repo),
     pdf_handler=Depends(get_pdf_handler),
+    vector_store=Depends(get_vector_store_dep),
 ):
     """Import a paper from ADS with streaming progress (useful for recursive imports)."""
 
@@ -147,8 +149,12 @@ async def import_from_ads_stream(
                 yield json.dumps({"type": "error", "message": f"Paper not found in ADS: {bibcode}"}) + "\n"
                 return
 
-            # Add to database
-            paper_repo.add(paper)
+            # Add to database (skip embedding for now, we'll do it at the end or separately)
+            # Actually for the main paper we can embed immediately or add to batch
+            # Let's add to batch to consistent
+            paper_repo.add(paper, embed=False)
+            
+            papers_to_embed = [paper]
 
             # Add to project if specified
             if request.project:
@@ -176,7 +182,7 @@ async def import_from_ads_stream(
                     pdf_path = pdf_handler.download(paper)
                     if pdf_path:
                         paper.pdf_path = str(pdf_path)
-                        paper_repo.add(paper)
+                        paper_repo.add(paper, embed=False) # Update path without re-embedding yet
                         yield json.dumps({
                             "type": "log",
                             "level": "success",
@@ -206,10 +212,12 @@ async def import_from_ads_stream(
                 # But we can report when it's done or if we modify ads_client.
                 # For now, we'll just await it but maybe we can improve ads_client later.
                 # Assuming fetch_references returns a list.
-                refs = ads_client.fetch_references(bibcode, limit=50)
+                refs = ads_client.fetch_references(bibcode, limit=50, save=False)
                 
                 for i, ref in enumerate(refs):
-                    paper_repo.add(ref)
+                    paper_repo.add(ref, embed=False)
+                    citation_repo.add(citing_bibcode=bibcode, cited_bibcode=ref.bibcode)
+                    papers_to_embed.append(ref)
                     if request.project:
                         project_repo.add_paper(request.project, ref.bibcode)
                     
@@ -235,10 +243,12 @@ async def import_from_ads_stream(
                     "message": "Fetching citations..."
                 }) + "\n"
                 
-                cites = ads_client.fetch_citations(bibcode, limit=50)
+                cites = ads_client.fetch_citations(bibcode, limit=50, save=False)
                 
                 for i, cite in enumerate(cites):
-                    paper_repo.add(cite)
+                    paper_repo.add(cite, embed=False)
+                    citation_repo.add(citing_bibcode=cite.bibcode, cited_bibcode=bibcode)
+                    papers_to_embed.append(cite)
                     if request.project:
                         project_repo.add_paper(request.project, cite.bibcode)
                     
@@ -267,6 +277,30 @@ async def import_from_ads_stream(
                     "papers_added": papers_added,
                 }
             }) + "\n"
+
+            # Batch embed all collected papers
+            if papers_to_embed:
+                yield json.dumps({
+                    "type": "progress",
+                    "message": f"Generating embeddings for {len(papers_to_embed)} papers..."
+                }) + "\n"
+                await asyncio.sleep(0.01)
+                
+                # Run embedding in thread pool to avoid blocking asyncio loop too much
+                # (though ChromaDB might be partly blocking anyway)
+                try:
+                    await asyncio.to_thread(vector_store.embed_papers, papers_to_embed)
+                    yield json.dumps({
+                        "type": "log",
+                        "level": "success",
+                        "message": f"Embedded {len(papers_to_embed)} papers"
+                    }) + "\n"
+                except Exception as e:
+                     yield json.dumps({
+                        "type": "log",
+                        "level": "warning",
+                        "message": f"Embedding failed: {str(e)}"
+                    }) + "\n"
 
         except Exception as e:
             yield json.dumps({

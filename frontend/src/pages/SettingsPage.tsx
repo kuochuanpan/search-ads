@@ -46,6 +46,22 @@ export function SettingsPage() {
     },
   })
 
+  // API Keys state
+  const [adsKey, setAdsKey] = useState('')
+  const [openaiKey, setOpenaiKey] = useState('')
+  const [anthropicKey, setAnthropicKey] = useState('')
+
+  const updateApiKeys = useMutation({
+    mutationFn: (keys: any) => api.updateApiKeys(keys),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      // We don't clear inputs here to let user see what they typed? 
+      // Actually we should clear them because they are secure fields
+      // and checking 'settings' will update the placeholders.
+      // But we did inline setKey('') in the onClick handlers.
+    },
+  })
+
   const handleSaveAuthorNames = () => {
     updateAuthorNames.mutate(authorNames)
   }
@@ -203,59 +219,122 @@ export function SettingsPage() {
           <h2 className="font-medium">API Keys</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          API keys are configured via environment variables. Use the Test button to verify they work.
+          Enter your API keys below. They will be stored securely in <code>~/.search-ads/.env</code>.
         </p>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between p-3 border rounded-lg">
-            <div>
-              <p className="font-medium">ADS API Key</p>
-              <p className="text-sm text-muted-foreground">
-                {settings?.has_ads_key ? 'Configured' : 'Not configured'}
-              </p>
+        <div className="space-y-4">
+          {/* ADS Key */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">ADS API Key</label>
+              <span className={`text-xs ${settings?.has_ads_key ? 'text-green-600' : 'text-amber-600'}`}>
+                {settings?.has_ads_key ? 'Configured' : 'Missing'}
+              </span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleTestApi('ads')}
-              disabled={testingApi === 'ads' || !settings?.has_ads_key}
-            >
-              {testingApi === 'ads' ? 'Testing...' : 'Test'}
-            </Button>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder={settings?.has_ads_key ? "••••••••••••••••" : "Enter ADS API Key"}
+                value={adsKey}
+                onChange={(e) => setAdsKey(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  updateApiKeys.mutate({ ads_api_key: adsKey })
+                  setAdsKey('')
+                }}
+                disabled={!adsKey || updateApiKeys.isPending}
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTestApi('ads')}
+                disabled={testingApi === 'ads' || !settings?.has_ads_key}
+              >
+                {testingApi === 'ads' ? '...' : 'Test'}
+              </Button>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 border rounded-lg">
-            <div>
-              <p className="font-medium">OpenAI API Key</p>
-              <p className="text-sm text-muted-foreground">
-                {settings?.has_openai_key ? 'Configured' : 'Not configured'}
-              </p>
+          {/* OpenAI Key */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">OpenAI API Key</label>
+              <span className={`text-xs ${settings?.has_openai_key ? 'text-green-600' : 'text-amber-600'}`}>
+                {settings?.has_openai_key ? 'Configured' : 'Missing'}
+              </span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleTestApi('openai')}
-              disabled={testingApi === 'openai' || !settings?.has_openai_key}
-            >
-              {testingApi === 'openai' ? 'Testing...' : 'Test'}
-            </Button>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder={settings?.has_openai_key ? "••••••••••••••••" : "Enter OpenAI API Key"}
+                value={openaiKey}
+                onChange={(e) => setOpenaiKey(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  updateApiKeys.mutate({ openai_api_key: openaiKey })
+                  setOpenaiKey('')
+                }}
+                disabled={!openaiKey || updateApiKeys.isPending}
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTestApi('openai')}
+                disabled={testingApi === 'openai' || !settings?.has_openai_key}
+              >
+                {testingApi === 'openai' ? '...' : 'Test'}
+              </Button>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 border rounded-lg">
-            <div>
-              <p className="font-medium">Anthropic API Key</p>
-              <p className="text-sm text-muted-foreground">
-                {settings?.has_anthropic_key ? 'Configured' : 'Not configured'}
-              </p>
+          {/* Anthropic Key */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Anthropic API Key</label>
+              <span className={`text-xs ${settings?.has_anthropic_key ? 'text-green-600' : 'text-amber-600'}`}>
+                {settings?.has_anthropic_key ? 'Configured' : 'Missing'}
+              </span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleTestApi('anthropic')}
-              disabled={testingApi === 'anthropic' || !settings?.has_anthropic_key}
-            >
-              {testingApi === 'anthropic' ? 'Testing...' : 'Test'}
-            </Button>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder={settings?.has_anthropic_key ? "••••••••••••••••" : "Enter Anthropic API Key"}
+                value={anthropicKey}
+                onChange={(e) => setAnthropicKey(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  updateApiKeys.mutate({ anthropic_api_key: anthropicKey })
+                  setAnthropicKey('')
+                }}
+                disabled={!anthropicKey || updateApiKeys.isPending}
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTestApi('anthropic')}
+                disabled={testingApi === 'anthropic' || !settings?.has_anthropic_key}
+              >
+                {testingApi === 'anthropic' ? '...' : 'Test'}
+              </Button>
+            </div>
           </div>
         </div>
 

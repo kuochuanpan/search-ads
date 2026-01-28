@@ -43,3 +43,16 @@ build/
 # Node
 node_modules/
 package-lock.json
+
+# Tauri / Rust / Cargo
+target/
+src-tauri/target/
+**/*.rs.bk
+*.pdb
+
+# Editor / Tool specific
+.claude/
+*.bak
+
+# Frontend
+frontend/.vite/
