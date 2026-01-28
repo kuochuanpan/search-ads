@@ -3,12 +3,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.web.routers import papers, projects, citations, notes, search, import_, pdf, settings, ai, latex
+
+from src.core.config import settings
+from src.web.routers import papers, projects, citations, notes, search, import_, pdf, settings as settings_router, ai, latex
 
 app = FastAPI(
     title="Search-ADS API",
     description="API for scientific paper citation management",
-    version="0.2.0-beta",
+    version=settings.version,
 )
 
 # CORS middleware for React dev server and Tauri desktop app
@@ -37,7 +39,7 @@ app.include_router(notes.router, prefix="/api/notes", tags=["Notes"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(import_.router, prefix="/api/import", tags=["Import"])
 app.include_router(pdf.router, prefix="/api/pdf", tags=["PDF"])
-app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 app.include_router(latex.router, prefix="/api/latex", tags=["LaTeX"])
 
@@ -47,7 +49,7 @@ async def root():
     """Root endpoint - API info."""
     return {
         "name": "Search-ADS API",
-        "version": "0.2.0-beta",
+        "version": settings.version,
         "docs": "/docs",
         "health": "/api/health",
     }

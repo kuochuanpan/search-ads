@@ -16,6 +16,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # General
+    version: str = Field(default="0.2.0-beta", alias="VERSION")
+
     # API Keys
     ads_api_key: str = Field(default="", alias="ADS_API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
