@@ -169,6 +169,71 @@ async fn api_delete(
         .map_err(|e| format!("Failed to parse JSON: {}", e))
 }
 
+/// Proxy a streaming request to the backend and emit events
+#[tauri::command]
+async fn api_stream(
+    app: AppHandle,
+    client: tauri::State<'_, HttpClient>,
+    path: String,
+    method: Option<String>,
+    body: Option<serde_json::Value>,
+    event_id: String,
+) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:9527{}", path);
+    println!("[Proxy] STREAM {} to event {}", url, event_id);
+
+    let method = method.unwrap_or_else(|| "GET".to_string()).to_uppercase();
+    
+    let mut request = match method.as_str() {
+        "GET" => client.0.get(&url),
+        "POST" => client.0.post(&url),
+        _ => return Err(format!("Unsupported method: {}", method)),
+    };
+
+    if let Some(b) = body {
+        request = request.json(&b);
+    }
+
+    let mut response = request
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status, text));
+    }
+
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    let text = String::from_utf8_lossy(&chunk).to_string();
+                    let _ = app.emit(&format!("stream-event-{}", event_id), serde_json::json!({
+                        "type": "chunk",
+                        "data": text
+                    }));
+                }
+                Ok(None) => break, // End of stream
+                Err(e) => {
+                     let _ = app.emit(&format!("stream-event-{}", event_id), serde_json::json!({
+                        "type": "error",
+                        "message": e.to_string()
+                    }));
+                    return;
+                }
+            }
+        }
+        
+        let _ = app.emit(&format!("stream-event-{}", event_id), serde_json::json!({
+            "type": "done"
+        }));
+    });
+
+    Ok(())
+}
+
 /// Start the Python FastAPI server as a sidecar process
 #[tauri::command]
 async fn start_server(app: AppHandle, state: tauri::State<'_, ServerState>) -> Result<String, String> {
@@ -256,7 +321,8 @@ pub fn run() {
         .manage(HttpClient::new())
         .invoke_handler(tauri::generate_handler![
             start_server, stop_server, server_status,
-            api_get, api_post, api_put, api_patch, api_delete
+            api_get, api_post, api_put, api_patch, api_delete,
+            api_stream
         ])
         .setup(|app| {
             // Auto-start server on app launch

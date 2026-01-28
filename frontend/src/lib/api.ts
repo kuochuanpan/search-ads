@@ -7,18 +7,19 @@ console.log('[API] Running in Tauri:', isTauri);
 const API_BASE = '/api'
 
 // Tauri invoke function - dynamically imported
-let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
+let tauriApi: { invoke: any, listen: any } | null = null;
 
-async function getTauriInvoke() {
+async function getTauri() {
   if (!isTauri) return null;
-  if (tauriInvoke) return tauriInvoke;
+  if (tauriApi) return tauriApi;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    tauriInvoke = invoke;
-    console.log('[API] Tauri invoke loaded');
-    return invoke;
+    const { listen } = await import('@tauri-apps/api/event');
+    tauriApi = { invoke, listen };
+    console.log('[API] Tauri interactors loaded');
+    return tauriApi;
   } catch (e) {
-    console.error('[API] Failed to load Tauri invoke:', e);
+    console.error('[API] Failed to load Tauri interactors:', e);
     return null;
   }
 }
@@ -272,10 +273,11 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const invoke = await getTauriInvoke();
+  const tauri = await getTauri();
 
   // Use Tauri command proxy when in Tauri
-  if (invoke) {
+  if (tauri) {
+    const { invoke } = tauri;
     const apiPath = `/api${path}`;
     const method = (options.method || 'GET').toUpperCase();
     const body = options.body ? JSON.parse(options.body as string) : undefined;
@@ -328,16 +330,84 @@ async function request<T>(
   return response.json()
 }
 
-// Stream requests - fall back to non-streaming in Tauri for now
+// Stream requests - use Rust-side streaming proxy in Tauri
 async function* streamRequest<T>(path: string, options: RequestInit = {}): AsyncGenerator<NDJSONStreamResult<T>> {
-  const invoke = await getTauriInvoke();
+  const tauri = await getTauri();
 
-  // In Tauri, fall back to non-streaming request
-  if (invoke) {
-    console.log('[API] Stream request in Tauri - using non-streaming fallback');
-    const result = await request<T>(path, options);
-    yield { type: 'result', data: result } as NDJSONStreamResult<T>;
-    yield { type: 'done' } as NDJSONStreamResult<T>;
+  // In Tauri, use the api_stream command and listen for events
+  if (tauri) {
+    const { invoke, listen } = tauri;
+    console.log('[API] Stream request in Tauri - using api_stream command');
+
+    // Generate unique event ID
+    const eventId = crypto.randomUUID();
+    const apiPath = `/api${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+
+    // Create a buffer for incoming chunks
+    let buffer = '';
+    const queue: any[] = [];
+    let resolveNext: ((value?: any) => void) | null = null;
+    let isDone = false;
+    let error: Error | null = null;
+
+    // Set up event listener
+    const unlisten = await listen(`stream-event-${eventId}`, (event: any) => {
+      const payload = event.payload;
+
+      if (payload.type === 'chunk') {
+        buffer += payload.data;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep last incomplete line
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            queue.push(JSON.parse(line));
+          } catch (e) {
+            console.warn('Failed to parse NDJSON line:', line);
+          }
+        }
+      } else if (payload.type === 'done') {
+        isDone = true;
+      } else if (payload.type === 'error') {
+        error = new Error(payload.message);
+        isDone = true;
+      }
+
+      // Notify waiting consumer
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
+    });
+
+    try {
+      // Start the stream
+      await invoke('api_stream', {
+        path: apiPath,
+        method,
+        body,
+        eventId: eventId
+      });
+
+      // Yield items from queue
+      while (true) {
+        if (queue.length > 0) {
+          yield queue.shift();
+        } else if (isDone) {
+          if (error) throw error;
+          break;
+        } else {
+          // Wait for next event
+          await new Promise<void>(resolve => { resolveNext = resolve; });
+        }
+      }
+    } finally {
+      // Cleanup
+      unlisten();
+    }
     return;
   }
 
@@ -587,18 +657,6 @@ export const api = {
     minYear?: number,
     minCitations?: number
   ) => {
-    // In Tauri, use non-streaming endpoint to avoid NDJSON parsing issues
-    if (isTauri) {
-      return (async function* () {
-        const result = await api.searchSemantic(query, limit, minYear, minCitations)
-        // Yield results one by one to match stream behavior
-        for (const item of result.results) {
-          yield { type: 'result', data: item } as any
-        }
-        yield { type: 'done', total: result.count } as any
-      })()
-    }
-
     const params = new URLSearchParams()
     params.append('limit', String(limit))
     if (minYear !== undefined) params.append('min_year', String(minYear))
@@ -629,17 +687,6 @@ export const api = {
     }),
 
   streamSearchAds: (query: string, limit = 20) => {
-    // In Tauri, use non-streaming endpoint
-    if (isTauri) {
-      return (async function* () {
-        const result = await api.searchAds(query, limit)
-        for (const item of result.results) {
-          yield { type: 'result', data: item } as any
-        }
-        yield { type: 'done', total: result.count } as any
-      })()
-    }
-
     return streamRequest<SearchResultItem>('/search/ads/stream', {
       method: 'POST',
       body: JSON.stringify({ query, limit }),
@@ -677,23 +724,6 @@ export const api = {
       download_pdf?: boolean
     }
   ) => {
-    // In Tauri, use non-streaming endpoint
-    if (isTauri) {
-      return (async function* () {
-        yield { type: 'progress', message: 'Importing paper...' } as any
-        try {
-          const result = await api.importFromAds(identifier, options)
-          if (result.success) {
-            yield { type: 'result', data: result } as any
-          } else {
-            yield { type: 'error', message: result.message } as any
-          }
-        } catch (e: any) {
-          yield { type: 'error', message: e.message || 'Import failed' } as any
-        }
-      })()
-    }
-
     return streamRequest<{
       success: boolean
       bibcode?: string
@@ -719,19 +749,6 @@ export const api = {
     ),
 
   streamBatchImport: (identifiers: string[], project?: string) => {
-    // In Tauri, use non-streaming endpoint
-    if (isTauri) {
-      return (async function* () {
-        yield { type: 'progress', message: `Importing ${identifiers.length} papers...` } as any
-        try {
-          const result = await api.batchImport(identifiers, project)
-          yield { type: 'result', data: result } as any
-        } catch (e: any) {
-          yield { type: 'error', message: e.message || 'Batch import failed' } as any
-        }
-      })()
-    }
-
     return streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
       '/import/batch/stream',
       {
