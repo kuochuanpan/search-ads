@@ -60,6 +60,13 @@ class ModelsRequest(BaseModel):
     anthropic_model: str
 
 
+class ApiKeysRequest(BaseModel):
+    """Request to update API keys."""
+    ads_api_key: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+
+
 @router.get("/", response_model=SettingsResponse)
 async def get_settings():
     """Get current application settings."""
@@ -118,6 +125,23 @@ async def update_models(request: ModelsRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save model settings: {str(e)}")
+
+
+@router.put("/api-keys", response_model=MessageResponse)
+async def update_api_keys(request: ApiKeysRequest):
+    """Update API keys."""
+    try:
+        settings.save_api_keys(
+            request.ads_api_key,
+            request.openai_api_key,
+            request.anthropic_api_key
+        )
+        return MessageResponse(
+            message=f"API keys updated successfully",
+            success=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save API keys: {str(e)}")
 
 
 @router.get("/stats", response_model=StatsResponse)
@@ -183,7 +207,7 @@ async def test_api_key(
             from src.core.ads_client import ADSClient
             client = ADSClient()
             # Try a simple search
-            papers = client.search("test", max_results=1)
+            papers = client.search("test", limit=1)
             return {"valid": True, "message": "ADS API key is valid"}
         except Exception as e:
             return {"valid": False, "message": f"ADS API key test failed: {str(e)}"}

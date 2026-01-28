@@ -112,6 +112,12 @@ export interface SettingsResponse {
   my_author_names: string
 }
 
+export interface ApiKeysRequest {
+  ads_api_key?: string
+  openai_api_key?: string
+  anthropic_api_key?: string
+}
+
 export interface AuthorNamesResponse {
   author_names: string
   parsed_names: string[]
@@ -821,7 +827,9 @@ export const api = {
     }>('/settings/vector-stats'),
 
   testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
-    request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`),
+    request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`, {
+      method: 'POST',
+    }),
 
   getAuthorNames: () => request<AuthorNamesResponse>('/settings/author-names'),
 
@@ -829,6 +837,12 @@ export const api = {
     request<{ message: string; success: boolean }>('/settings/author-names', {
       method: 'PUT',
       body: JSON.stringify({ author_names: authorNames }),
+    }),
+
+  updateApiKeys: (keys: ApiKeysRequest) =>
+    request<{ message: string; success: boolean }>('/settings/api-keys', {
+      method: 'PUT',
+      body: JSON.stringify(keys),
     }),
 
   updateModels: (openai_model: string, anthropic_model: string) =>

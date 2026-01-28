@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     # General
-    version: str = Field(default="0.2.0-beta", alias="VERSION")
+    version: str = Field(default="0.3.0-beta", alias="VERSION")
 
     # API Keys
     ads_api_key: str = Field(default="", alias="ADS_API_KEY")
@@ -231,6 +231,56 @@ class Settings(BaseSettings):
 
         content = update_env_var("OPENAI_MODEL", openai_model, content)
         content = update_env_var("ANTHROPIC_MODEL", anthropic_model, content)
+
+        env_path.write_text(content)
+        return True
+
+    def save_api_keys(self, ads_key: str | None = None, openai_key: str | None = None, anthropic_key: str | None = None) -> bool:
+        """Save API keys to the .env file.
+        
+        Only updates keys that are provided (not None).
+        """
+        import re
+        env_path = self.data_dir / ".env"
+
+        # Update the in-memory setting
+        if ads_key is not None:
+            self.ads_api_key = ads_key
+        if openai_key is not None:
+            self.openai_api_key = openai_key
+        if anthropic_key is not None:
+            self.anthropic_api_key = anthropic_key
+
+        # Read existing .env file
+        if env_path.exists():
+            content = env_path.read_text()
+        else:
+            content = ""
+
+        # Helper to update or add a line
+        def update_env_var(var_name, value, content):
+            new_line = f'{var_name}="{value}"'
+            if f'{var_name}=' in content:
+                # Replace existing line
+                content = re.sub(
+                    f'^{var_name}=.*$',
+                    new_line,
+                    content,
+                    flags=re.MULTILINE
+                )
+            else:
+                # Add new line
+                if content and not content.endswith('\n'):
+                    content += '\n'
+                content += f'{new_line}\n'
+            return content
+
+        if ads_key is not None:
+            content = update_env_var("ADS_API_KEY", ads_key, content)
+        if openai_key is not None:
+            content = update_env_var("OPENAI_API_KEY", openai_key, content)
+        if anthropic_key is not None:
+            content = update_env_var("ANTHROPIC_API_KEY", anthropic_key, content)
 
         env_path.write_text(content)
         return True
