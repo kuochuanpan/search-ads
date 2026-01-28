@@ -8,7 +8,7 @@ from src.web.routers import papers, projects, citations, notes, search, import_,
 app = FastAPI(
     title="Search-ADS API",
     description="API for scientific paper citation management",
-    version="0.1.0",
+    version="0.2.0-beta",
 )
 
 # CORS middleware for React dev server and Tauri desktop app
@@ -47,7 +47,7 @@ async def root():
     """Root endpoint - API info."""
     return {
         "name": "Search-ADS API",
-        "version": "0.1.0",
+        "version": "0.2.0-beta",
         "docs": "/docs",
         "health": "/api/health",
     }
