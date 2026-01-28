@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.db.repository import PaperRepository, ProjectRepository
-from src.web.dependencies import get_paper_repo, get_project_repo, get_ads_client
+from src.web.dependencies import get_paper_repo, get_project_repo, get_ads_client, get_pdf_handler
 from src.web.schemas.paper import PaperRead
 from src.web.schemas.common import MessageResponse
 
@@ -22,6 +22,7 @@ class ImportFromADSRequest(BaseModel):
     expand_references: bool = False
     expand_citations: bool = False
     max_hops: int = 1
+    download_pdf: bool = False
 
 
 class ImportFromADSResponse(BaseModel):
@@ -117,9 +118,10 @@ async def import_from_ads_stream(
     ads_client=Depends(get_ads_client),
     paper_repo: PaperRepository = Depends(get_paper_repo),
     project_repo: ProjectRepository = Depends(get_project_repo),
+    pdf_handler=Depends(get_pdf_handler),
 ):
     """Import a paper from ADS with streaming progress (useful for recursive imports)."""
-    
+
     async def event_generator():
         try:
             yield json.dumps({
@@ -157,10 +159,41 @@ async def import_from_ads_stream(
 
             papers_added = 1
             yield json.dumps({
-                "type": "log", 
-                "level": "success", 
+                "type": "log",
+                "level": "success",
                 "message": f"Imported: {paper.title[:50]}..."
             }) + "\n"
+
+            # Download PDF if requested
+            if request.download_pdf:
+                yield json.dumps({
+                    "type": "progress",
+                    "message": f"Downloading PDF for {bibcode}..."
+                }) + "\n"
+                await asyncio.sleep(0.01)
+
+                try:
+                    pdf_path = pdf_handler.download(paper)
+                    if pdf_path:
+                        paper.pdf_path = str(pdf_path)
+                        paper_repo.add(paper)
+                        yield json.dumps({
+                            "type": "log",
+                            "level": "success",
+                            "message": f"PDF downloaded: {pdf_path}"
+                        }) + "\n"
+                    else:
+                        yield json.dumps({
+                            "type": "log",
+                            "level": "info",
+                            "message": "PDF not available for this paper"
+                        }) + "\n"
+                except Exception as pdf_err:
+                    yield json.dumps({
+                        "type": "log",
+                        "level": "info",
+                        "message": f"Could not download PDF: {str(pdf_err)}"
+                    }) + "\n"
 
             # Expand references if requested
             if request.expand_references:

@@ -18,7 +18,7 @@ export function ImportPage() {
   const [adsUrl, setAdsUrl] = useState('')
   const [expandRefs, setExpandRefs] = useState(true)
   const [expandCitations, setExpandCitations] = useState(false)
-  const [downloadPdf, setDownloadPdf] = useState(true)
+  const [downloadPdf, setDownloadPdf] = useState(false)
   const [selectedProject, setSelectedProject] = useState<string>(activeProject || '')
 
   // Update selected project when active project changes
@@ -49,6 +49,7 @@ export function ImportPage() {
         project: selectedProject || undefined,
         expand_references: expandRefs,
         expand_citations: expandCitations,
+        download_pdf: downloadPdf,
       })) {
         if (event.type === 'progress') {
           setAdsProgress(prev => prev ? ({ ...prev, message: event.message || 'Processing...' }) : null)
@@ -74,6 +75,7 @@ export function ImportPage() {
       setAdsResult({ success: false, message: e.message || 'Import failed' })
     } finally {
       setAdsLoading(false)
+      setAdsProgress(null)
     }
   }
 
@@ -149,7 +151,7 @@ export function ImportPage() {
         </div>
 
         <Button
-          className="w-full mt-4"
+          className="w-full mt-4 bg-emerald-500 hover:bg-emerald-600 text-white"
           onClick={handleAdsImport}
           disabled={adsLoading || !adsUrl.trim()}
         >
@@ -162,9 +164,22 @@ export function ImportPage() {
               <span>{adsProgress.message}</span>
             </div>
             {/* Indeterminate progress bar since we don't know total steps for single import recursion easily */}
-            <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
-              <div className="bg-primary h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+            <div className="w-full bg-green-100 dark:bg-green-950 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-green-300 via-emerald-400 to-green-300 rounded-full shadow-[0_0_10px_rgba(74,222,128,0.5)]"
+                style={{
+                  width: '100%',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s ease-in-out infinite'
+                }}
+              ></div>
             </div>
+            <style>{`
+              @keyframes shimmer {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+              }
+            `}</style>
 
             {adsProgress.logs.length > 0 && (
               <div className="mt-2 max-h-32 overflow-y-auto text-xs space-y-1 p-2 bg-secondary/30 rounded border">
