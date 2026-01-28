@@ -28,7 +28,7 @@ const citationTypeInfo: Record<string, { color: string; description: string }> =
 export function SearchPage() {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('natural')
-  const [scopes, setScopes] = useState<Set<SearchScope>>(new Set(['library']))
+  const [scope, setScope] = useState<SearchScope>('library')
   const [minYear, setMinYear] = useState<number | undefined>()
   const [minCitations, setMinCitations] = useState<number | undefined>()
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set())
@@ -53,15 +53,6 @@ export function SearchPage() {
   const addToProject = useAddPapersToProject()
   const aiSearch = useAISearch()
 
-  const toggleScope = (scope: SearchScope) => {
-    const newScopes = new Set(scopes)
-    if (newScopes.has(scope)) {
-      newScopes.delete(scope)
-    } else {
-      newScopes.add(scope)
-    }
-    setScopes(newScopes)
-  }
 
   const handleSearch = async () => {
     if (!query.trim()) return
@@ -80,9 +71,9 @@ export function SearchPage() {
       const params = {
         query: query.trim(),
         limit: 20,
-        search_library: scopes.has('library'),
-        search_ads: scopes.has('ads'),
-        search_pdf: scopes.has('pdf'),
+        search_library: scope === 'library',
+        search_ads: scope === 'ads',
+        search_pdf: scope === 'pdf',
         min_year: minYear,
         min_citations: minCitations,
         use_llm: true,
@@ -126,7 +117,7 @@ export function SearchPage() {
     // Create promises for each scope
     const tasks = []
 
-    if (scopes.has('ads')) {
+    if (scope === 'ads') {
       tasks.push((async () => {
         try {
           setSearchProgress(prev => ({ ...prev, ads: { current: 0, message: 'Starting ADS search...' } }))
@@ -149,7 +140,7 @@ export function SearchPage() {
       })())
     }
 
-    if (scopes.has('library')) {
+    if (scope === 'library') {
       tasks.push((async () => {
         try {
           setSearchProgress(prev => ({ ...prev, library: { current: 0, message: 'Starting library search...' } }))
@@ -310,25 +301,25 @@ export function SearchPage() {
           <span className="text-sm text-muted-foreground">Search in:</span>
           <div className="flex gap-2">
             <Button
-              variant={scopes.has('library') ? 'secondary' : 'outline'}
+              variant={scope === 'library' ? 'secondary' : 'outline'}
               size="sm"
-              onClick={() => toggleScope('library')}
+              onClick={() => setScope('library')}
             >
               <Icon icon={BookOpen} size={14} />
               Your Library
             </Button>
             <Button
-              variant={scopes.has('ads') ? 'secondary' : 'outline'}
+              variant={scope === 'ads' ? 'secondary' : 'outline'}
               size="sm"
-              onClick={() => toggleScope('ads')}
+              onClick={() => setScope('ads')}
             >
               <Icon icon={Search} size={14} />
               ADS
             </Button>
             <Button
-              variant={scopes.has('pdf') ? 'secondary' : 'outline'}
+              variant={scope === 'pdf' ? 'secondary' : 'outline'}
               size="sm"
-              onClick={() => toggleScope('pdf')}
+              onClick={() => setScope('pdf')}
             >
               <Icon icon={FileText} size={14} />
               PDF Full-text
@@ -364,7 +355,7 @@ export function SearchPage() {
         </div>
 
         <Button
-          className="w-full mt-4"
+          className="w-full mt-4 bg-pink-500 hover:bg-pink-600 text-white"
           onClick={handleSearch}
           disabled={(aiSearch.isPending || isStreaming) || !query.trim()}
         >
@@ -375,13 +366,26 @@ export function SearchPage() {
         {/* Progress Bars for Streaming */}
         {isStreaming && (
           <div className="mt-4 space-y-2">
+            <style>{`
+              @keyframes shimmer {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+              }
+            `}</style>
             {searchProgress.natural && (
               <div className="text-sm">
                 <div className="flex justify-between mb-1">
                   <span>{searchProgress.natural.message}</span>
                 </div>
-                <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-primary h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
+                    style={{
+                      width: '100%',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s ease-in-out infinite'
+                    }}
+                  ></div>
                 </div>
               </div>
             )}
@@ -391,8 +395,15 @@ export function SearchPage() {
                   <span>ADS: {searchProgress.ads.message}</span>
                   {searchProgress.ads.total && <span>{Math.round((searchProgress.ads.current / searchProgress.ads.total) * 100)}%</span>}
                 </div>
-                <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-blue-500 h-full transition-all duration-300 animate-pulse" style={{ width: '100%' }}></div>
+                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
+                    style={{
+                      width: '100%',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s ease-in-out infinite'
+                    }}
+                  ></div>
                 </div>
               </div>
             )}
@@ -404,10 +415,14 @@ export function SearchPage() {
                     <span>{Math.round((searchProgress.library.current / searchProgress.library.total) * 100)}%</span>
                   ) : null}
                 </div>
-                <div className="w-full bg-secondary rounded-full h-1.5">
+                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
                   <div
-                    className="bg-green-500 h-full transition-all duration-300"
-                    style={{ width: searchProgress.library.total ? `${(searchProgress.library.current / searchProgress.library.total) * 100}%` : '100%' }}
+                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
+                    style={{
+                      width: searchProgress.library.total ? `${(searchProgress.library.current / searchProgress.library.total) * 100}%` : '100%',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s ease-in-out infinite'
+                    }}
                   ></div>
                 </div>
               </div>
@@ -418,9 +433,9 @@ export function SearchPage() {
 
       {/* AI Analysis */}
       {(aiSearch.data?.ai_analysis || aiAnalysis) && (
-        <Card className="p-6 border-l-4 border-l-primary">
+        <Card className="p-6 relative overflow-hidden border-l-4 border-l-pink-400">
           <div className="flex items-center gap-2 mb-3">
-            <Icon icon={Sparkles} size={18} className="text-primary" />
+            <Icon icon={Sparkles} size={18} className="text-pink-500" />
             <h3 className="font-medium">AI Analysis</h3>
           </div>
           <div className="space-y-2 text-sm">

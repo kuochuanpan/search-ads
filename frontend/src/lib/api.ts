@@ -575,6 +575,7 @@ export const api = {
       expand_references?: boolean
       expand_citations?: boolean
       max_hops?: number
+      download_pdf?: boolean
     }
   ) =>
     streamRequest<{
