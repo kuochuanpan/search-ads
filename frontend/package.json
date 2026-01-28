@@ -4,14 +4,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "build:strict": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "tauri:dev": "cd .. && cargo tauri dev",
+    "tauri:build": "cd .. && cargo tauri build"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.0.0",
     "@tanstack/react-router": "^1.0.0",
     "@tanstack/react-table": "^8.0.0",
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-http": "^2.5.6",
     "clsx": "^2.1.0",
     "date-fns": "^3.0.0",
     "lucide-react": "^0.300.0",

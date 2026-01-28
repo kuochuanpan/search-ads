@@ -1,4 +1,27 @@
+// Detect if running in Tauri (desktop app) or browser
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+
+console.log('[API] Running in Tauri:', isTauri);
+
+// In browser, use Vite's dev proxy
 const API_BASE = '/api'
+
+// Tauri invoke function - dynamically imported
+let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
+
+async function getTauriInvoke() {
+  if (!isTauri) return null;
+  if (tauriInvoke) return tauriInvoke;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    tauriInvoke = invoke;
+    console.log('[API] Tauri invoke loaded');
+    return invoke;
+  } catch (e) {
+    console.error('[API] Failed to load Tauri invoke:', e);
+    return null;
+  }
+}
 
 export interface Paper {
   bibcode: string
@@ -249,6 +272,45 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const invoke = await getTauriInvoke();
+
+  // Use Tauri command proxy when in Tauri
+  if (invoke) {
+    const apiPath = `/api${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+
+    console.log(`[API] Tauri ${method} ${apiPath}`);
+
+    try {
+      let result: unknown;
+      switch (method) {
+        case 'GET':
+          result = await invoke('api_get', { path: apiPath });
+          break;
+        case 'POST':
+          result = await invoke('api_post', { path: apiPath, body });
+          break;
+        case 'PUT':
+          result = await invoke('api_put', { path: apiPath, body });
+          break;
+        case 'PATCH':
+          result = await invoke('api_patch', { path: apiPath, body });
+          break;
+        case 'DELETE':
+          result = await invoke('api_delete', { path: apiPath });
+          break;
+        default:
+          throw new Error(`Unsupported method: ${method}`);
+      }
+      return result as T;
+    } catch (e) {
+      console.error('[API] Tauri request failed:', e);
+      throw new Error(String(e));
+    }
+  }
+
+  // Browser mode - use fetch with proxy
   const url = `${API_BASE}${path}`
   const response = await fetch(url, {
     headers: {
@@ -266,7 +328,20 @@ async function request<T>(
   return response.json()
 }
 
+// Stream requests - fall back to non-streaming in Tauri for now
 async function* streamRequest<T>(path: string, options: RequestInit = {}): AsyncGenerator<NDJSONStreamResult<T>> {
+  const invoke = await getTauriInvoke();
+
+  // In Tauri, fall back to non-streaming request
+  if (invoke) {
+    console.log('[API] Stream request in Tauri - using non-streaming fallback');
+    const result = await request<T>(path, options);
+    yield { type: 'result', data: result } as NDJSONStreamResult<T>;
+    yield { type: 'done' } as NDJSONStreamResult<T>;
+    return;
+  }
+
+  // Browser mode - use fetch with streaming
   const url = `${API_BASE}${path}`
   const response = await fetch(url, {
     headers: {
@@ -512,6 +587,18 @@ export const api = {
     minYear?: number,
     minCitations?: number
   ) => {
+    // In Tauri, use non-streaming endpoint to avoid NDJSON parsing issues
+    if (isTauri) {
+      return (async function* () {
+        const result = await api.searchSemantic(query, limit, minYear, minCitations)
+        // Yield results one by one to match stream behavior
+        for (const item of result.results) {
+          yield { type: 'result', data: item } as any
+        }
+        yield { type: 'done', total: result.count } as any
+      })()
+    }
+
     const params = new URLSearchParams()
     params.append('limit', String(limit))
     if (minYear !== undefined) params.append('min_year', String(minYear))
@@ -541,11 +628,23 @@ export const api = {
       body: JSON.stringify({ query, limit }),
     }),
 
-  streamSearchAds: (query: string, limit = 20) =>
-    streamRequest<SearchResultItem>('/search/ads/stream', {
+  streamSearchAds: (query: string, limit = 20) => {
+    // In Tauri, use non-streaming endpoint
+    if (isTauri) {
+      return (async function* () {
+        const result = await api.searchAds(query, limit)
+        for (const item of result.results) {
+          yield { type: 'result', data: item } as any
+        }
+        yield { type: 'done', total: result.count } as any
+      })()
+    }
+
+    return streamRequest<SearchResultItem>('/search/ads/stream', {
       method: 'POST',
       body: JSON.stringify({ query, limit }),
-    }),
+    })
+  },
 
   // Import
   importFromAds: (
@@ -577,8 +676,25 @@ export const api = {
       max_hops?: number
       download_pdf?: boolean
     }
-  ) =>
-    streamRequest<{
+  ) => {
+    // In Tauri, use non-streaming endpoint
+    if (isTauri) {
+      return (async function* () {
+        yield { type: 'progress', message: 'Importing paper...' } as any
+        try {
+          const result = await api.importFromAds(identifier, options)
+          if (result.success) {
+            yield { type: 'result', data: result } as any
+          } else {
+            yield { type: 'error', message: result.message } as any
+          }
+        } catch (e: any) {
+          yield { type: 'error', message: e.message || 'Import failed' } as any
+        }
+      })()
+    }
+
+    return streamRequest<{
       success: boolean
       bibcode?: string
       title?: string
@@ -590,7 +706,8 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ identifier, ...options }),
       }
-    ),
+    )
+  },
 
   batchImport: (identifiers: string[], project?: string) =>
     request<{ success: boolean; imported: number; failed: number; errors: string[] }>(
@@ -601,14 +718,28 @@ export const api = {
       }
     ),
 
-  streamBatchImport: (identifiers: string[], project?: string) =>
-    streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
+  streamBatchImport: (identifiers: string[], project?: string) => {
+    // In Tauri, use non-streaming endpoint
+    if (isTauri) {
+      return (async function* () {
+        yield { type: 'progress', message: `Importing ${identifiers.length} papers...` } as any
+        try {
+          const result = await api.batchImport(identifiers, project)
+          yield { type: 'result', data: result } as any
+        } catch (e: any) {
+          yield { type: 'error', message: e.message || 'Batch import failed' } as any
+        }
+      })()
+    }
+
+    return streamRequest<{ success: boolean; imported: number; failed: number; errors: string[] }>(
       '/import/batch/stream',
       {
         method: 'POST',
         body: JSON.stringify({ identifiers, project }),
       }
-    ),
+    )
+  },
 
   importBibtex: (bibtexContent: string, project?: string, fetchFromAds = true) => {
     const formData = new FormData()
@@ -699,8 +830,27 @@ export const api = {
     min_year?: number
     min_citations?: number
     use_llm?: boolean
-  }) =>
-    streamRequest<{
+  }) => {
+    // In Tauri, use non-streaming endpoint
+    if (isTauri) {
+      return (async function* () {
+        yield { type: 'progress', message: 'Searching with AI...' } as any
+        try {
+          const result = await api.aiSearch(params)
+          // Yield analysis first if present
+          if (result.ai_analysis) {
+            yield { type: 'analysis', data: result.ai_analysis } as any
+          }
+          // Yield the whole result package as 'result' type (SearchPage expects this structure too)
+          yield { type: 'result', data: result } as any
+          yield { type: 'done', total: result.total_count } as any
+        } catch (e: any) {
+          yield { type: 'error', message: e.message || 'AI Search failed' } as any
+        }
+      })()
+    }
+
+    return streamRequest<{
       query: string
       results: SearchResultItem[]
       ai_analysis?: {
@@ -717,7 +867,8 @@ export const api = {
     }>('/ai/search/stream', {
       method: 'POST',
       body: JSON.stringify(params),
-    }),
+    })
+  },
 
   aiSearch: (params: {
     query: string
