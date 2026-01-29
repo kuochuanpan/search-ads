@@ -56,3 +56,6 @@ src-tauri/target/
 
 # Frontend
 frontend/.vite/
+
+# Compiled Backend Resources
+src-tauri/resources/search-ads-server/
