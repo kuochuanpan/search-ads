@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon'
 
 export interface LibraryFiltersState {
   search: string
+  search_mode: 'metadata' | 'pdf'
   year_min: number | undefined
   year_max: number | undefined
   min_citations: number | undefined
@@ -42,6 +43,7 @@ export function LibraryFilters({ filters, onChange, minYear, maxYear }: LibraryF
   const clearFilters = () => {
     onChange({
       search: '',
+      search_mode: 'metadata',
       year_min: undefined,
       year_max: undefined,
       min_citations: undefined,
@@ -75,6 +77,23 @@ export function LibraryFilters({ filters, onChange, minYear, maxYear }: LibraryF
             className="pl-9"
           />
         </div>
+
+        {filters.search && (
+          <div className="flex bg-secondary rounded-lg p-1">
+            <button
+              onClick={() => updateFilter('search_mode', 'metadata')}
+              className={`px-2 py-1 text-xs rounded ${filters.search_mode === 'metadata' ? 'bg-background shadow font-medium' : 'text-muted-foreground hover:bg-background/50'}`}
+            >
+              Meta
+            </button>
+            <button
+              onClick={() => updateFilter('search_mode', 'pdf')}
+              className={`px-2 py-1 text-xs rounded ${filters.search_mode === 'pdf' ? 'bg-background shadow font-medium' : 'text-muted-foreground hover:bg-background/50'}`}
+            >
+              PDF
+            </button>
+          </div>
+        )}
 
         <Select
           value={filters.year_min?.toString() || ''}

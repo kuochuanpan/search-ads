@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     # General
-    version: str = Field(default="0.4.0-beta", alias="VERSION")
+    version: str = Field(default="0.5.0-beta", alias="VERSION")
 
     # API Keys
     ads_api_key: str = Field(default="", alias="ADS_API_KEY")

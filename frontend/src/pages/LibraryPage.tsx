@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useNavigate, useSearch, useLocation } from '@tanstack/react-router'
-import { Download } from 'lucide-react'
+import { Download, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { PaperTable } from '@/components/library/PaperTable'
@@ -10,6 +10,7 @@ import { usePapers } from '@/hooks/usePapers'
 import { useActiveProject, usePaperSelection } from '@/store'
 import { Paper } from '@/lib/api'
 import { useStats } from '@/hooks/useStats'
+import { Modal } from '@/components/ui/Modal'
 
 export function LibraryPage() {
   const navigate = useNavigate()
@@ -17,9 +18,15 @@ export function LibraryPage() {
   const searchParams = useSearch({ strict: false })
   const { project } = useActiveProject()
   const { count: selectedCount, selectedBibcodes } = usePaperSelection()
+  const { data: stats } = useStats()
+
+  // State for Cost Warning
+  const [showCostWarning, setShowCostWarning] = useState(false)
+  const [pendingFilters, setPendingFilters] = useState<LibraryFiltersState | null>(null)
 
   const [filters, setFilters] = useState<LibraryFiltersState>({
     search: (searchParams as any).search || '',
+    search_mode: (searchParams as any).search_mode || 'metadata',
     year_min: (searchParams as any).year_min ? Number((searchParams as any).year_min) : undefined,
     year_max: (searchParams as any).year_max ? Number((searchParams as any).year_max) : undefined,
     min_citations: (searchParams as any).min_citations ? Number((searchParams as any).min_citations) : undefined,
@@ -29,33 +36,71 @@ export function LibraryPage() {
     has_note: (searchParams as any).has_note ? (searchParams as any).has_note === 'true' || (searchParams as any).has_note === true : undefined,
   })
 
+  // Handle filter changes with warning interception
+  const handleFilterChange = (newFilters: LibraryFiltersState) => {
+    // Check if switching TO pdf mode from another mode
+    if (newFilters.search_mode === 'pdf' && filters.search_mode !== 'pdf') {
+      setPendingFilters(newFilters)
+      setShowCostWarning(true)
+      return
+    }
+    setFilters(newFilters)
+  }
+
+  const confirmPdfSearch = () => {
+    if (pendingFilters) {
+      setFilters(pendingFilters)
+    }
+    setShowCostWarning(false)
+    setPendingFilters(null)
+  }
+
+  const cancelPdfSearch = () => {
+    setShowCostWarning(false)
+    setPendingFilters(null)
+  }
+
   // Update filters when search params change (e.g. navigation from sidebar or home)
   useEffect(() => {
-    // Only update if search params are present to process (basic sync)
-    // We prioritize URL state for these specific navigation filters
     if (Object.keys(searchParams).length > 0) {
       setFilters(prev => ({
         ...prev,
         search: (searchParams as any).search || '',
+        search_mode: (searchParams as any).search_mode || 'metadata',
         is_my_paper: (searchParams as any).is_my_paper ? ((searchParams as any).is_my_paper === 'true' || (searchParams as any).is_my_paper === true) : undefined,
         has_note: (searchParams as any).has_note ? ((searchParams as any).has_note === 'true' || (searchParams as any).has_note === true) : undefined,
       }))
     }
   }, [searchParams])
 
-  // Map react-table sorting to API params
-  // Initialize from URL search params if present
+  // Sync filters to URL
+  useEffect(() => {
+    navigate({
+      search: (prev: any) => ({
+        ...prev,
+        search: filters.search || undefined,
+        search_mode: filters.search_mode === 'metadata' ? undefined : filters.search_mode,
+        year_min: filters.year_min,
+        year_max: filters.year_max,
+        min_citations: filters.min_citations,
+        has_pdf: filters.has_pdf,
+        pdf_embedded: filters.pdf_embedded,
+        is_my_paper: filters.is_my_paper,
+        has_note: filters.has_note,
+      }),
+      replace: true,
+    })
+  }, [filters, navigate])
+
+  // Sorting state
   const [sorting, setSorting] = useState<{ id: string; desc: boolean }[]>(() => {
     const sortBy = (searchParams as any).sort_by
     const sortOrder = (searchParams as any).sort_order
 
     if (sortBy) {
-      // Map API sort keys back to table IDs
       const id = sortBy === 'created_at' ? 'added_date' : sortBy
       return [{ id, desc: sortOrder === 'desc' }]
     }
-
-    // Default
     return [{ id: 'added_date', desc: true }]
   })
 
@@ -67,7 +112,6 @@ export function LibraryPage() {
     const sortBy = sortState.id === 'added_date' ? 'created_at' : sortState.id
     const sortOrder = sortState.desc ? 'desc' : 'asc'
 
-    // Only update if changed
     if ((searchParams as any).sort_by !== sortBy || (searchParams as any).sort_order !== sortOrder) {
       navigate({
         search: (prev: any) => ({
@@ -75,20 +119,20 @@ export function LibraryPage() {
           sort_by: sortBy,
           sort_order: sortOrder,
         }),
-        replace: true, // Use replace to avoid cluttering history
+        replace: true,
       })
     }
   }, [sorting, navigate, searchParams])
 
-  // Map react-table sorting to API params
+  // API Params
   const sortState = sorting[0]
   const sortBy = sortState?.id === 'added_date' ? 'created_at' : (sortState?.id as 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | 'journal' | undefined)
   const sortOrder = sortState?.desc ? 'desc' : 'asc'
 
-  // Memoize params to ensure we don't trigger any react-query overhead while typing search
   const queryParams = useMemo(() => ({
     project: project || undefined,
-    search: filters.search || undefined, // Enabled server-side search
+    search: filters.search || undefined,
+    search_pdf: filters.search_mode === 'pdf',
     year_min: filters.year_min,
     year_max: filters.year_max,
     min_citations: filters.min_citations,
@@ -101,6 +145,7 @@ export function LibraryPage() {
   }), [
     project,
     filters.search,
+    filters.search_mode,
     filters.year_min,
     filters.year_max,
     filters.min_citations,
@@ -112,8 +157,6 @@ export function LibraryPage() {
     sortOrder
   ])
 
-  const { data: stats } = useStats()
-
   const {
     data,
     isLoading,
@@ -123,12 +166,11 @@ export function LibraryPage() {
     isFetchingNextPage
   } = usePapers(queryParams)
 
-  // Flatten pages into a single array
   const papers = useMemo(() => {
     return data?.pages?.flatMap(page => page?.papers || []) ?? []
   }, [data])
 
-  // Infinite scroll observer
+  // Infinite scroll
   const loadMoreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -148,11 +190,10 @@ export function LibraryPage() {
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  // Restore scroll position
+  // Scroll restore
   const hasRestoredScroll = useRef(false)
 
   useEffect(() => {
-    // If we have a reset signal, clear storage and don't restore
     if ((location.state as any)?.resetScroll) {
       sessionStorage.removeItem('library_scroll_y')
       return
@@ -161,7 +202,6 @@ export function LibraryPage() {
     if (!isLoading && papers.length > 0 && !hasRestoredScroll.current) {
       const savedScroll = sessionStorage.getItem('library_scroll_y')
       if (savedScroll) {
-        // Run after a tick to ensure rendering is complete
         setTimeout(() => {
           window.scrollTo(0, parseInt(savedScroll))
           hasRestoredScroll.current = true
@@ -173,9 +213,7 @@ export function LibraryPage() {
   }, [isLoading, papers.length, location.state])
 
   const handleRowClick = useCallback((paper: Paper) => {
-    // Save scroll position
     sessionStorage.setItem('library_scroll_y', window.scrollY.toString())
-
     navigate({
       to: '/library/$bibcode',
       params: { bibcode: paper.bibcode },
@@ -200,14 +238,13 @@ export function LibraryPage() {
             <Icon icon={Download} size={16} />
             Import
           </Button>
-
         </div>
       </div>
 
       {/* Filters */}
       <LibraryFilters
         filters={filters}
-        onChange={setFilters}
+        onChange={handleFilterChange}
         minYear={stats?.min_year}
         maxYear={stats?.max_year}
       />
@@ -216,6 +253,41 @@ export function LibraryPage() {
       {selectedCount() > 0 && (
         <BulkActionsBar selectedBibcodes={Array.from(selectedBibcodes)} />
       )}
+
+      {/* Cost Warning Modal */}
+      <Modal
+        isOpen={showCostWarning}
+        onClose={cancelPdfSearch}
+        title="PDF Full-Text Search Warning"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-yellow-100 text-yellow-800 rounded-md text-sm">
+            <p className="font-semibold flex items-center gap-2">
+              <Icon icon={AlertTriangle} size={16} />
+              Potential High Resource Usage
+            </p>
+            <p className="mt-2 text-yellow-800/90">
+              Searching through full PDF text requires embedding your query and comparing it against all embedded PDF chunks.
+            </p>
+            <p className="mt-1 text-yellow-800/90">
+              Depending on the number of embedded papers, this operation might be slower and consume more resources/tokens compared to metadata search.
+            </p>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to enable PDF Full-Text search mode?
+          </p>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={cancelPdfSearch}>
+              Cancel
+            </Button>
+            <Button onClick={confirmPdfSearch}>
+              Enable PDF Search
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Loading / Error States */}
       {isLoading && (

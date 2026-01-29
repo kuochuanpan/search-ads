@@ -198,6 +198,9 @@ class PDFHandler:
         Raises:
             PDFParseError: If parsing fails
         """
+        if isinstance(pdf_path, str):
+            pdf_path = Path(pdf_path)
+            
         if not pdf_path.exists():
             raise PDFParseError(f"PDF file not found: {pdf_path}")
 

@@ -32,12 +32,13 @@ import { Paper, api } from '@/lib/api'
 import { formatAuthorList, cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/Icon'
 import { usePaperSelection } from '@/store'
-import { useToggleMyPaper, useDeletePaper, useOpenPdf, useEmbedPdf } from '@/hooks/usePapers'
+import { useToggleMyPaper, useDeletePaper, useOpenPdf, useEmbedPdf, useDeletePdfEmbedding } from '@/hooks/usePapers'
 import { useProjects, useAddPaperToProject } from '@/hooks/useProjects'
 import { useNote } from '@/hooks/useNotes'
 import { ReferencesModal } from './ReferencesModal'
 import { DownloadPdfButton } from './DownloadPdfButton'
 import { Loader2 } from 'lucide-react'
+import { Modal } from '@/components/ui/Modal'
 
 interface PaperTableProps {
   data: Paper[]
@@ -96,6 +97,7 @@ export function PaperTable(props: PaperTableProps) {
   const deletePaper = useDeletePaper()
   const openPdf = useOpenPdf()
   const embedPdf = useEmbedPdf()
+  const deletePdfEmbedding = useDeletePdfEmbedding()
   const { data: projectsData } = useProjects()
   const addPaperToProject = useAddPaperToProject()
 
@@ -221,8 +223,26 @@ export function PaperTable(props: PaperTableProps) {
     }
   }
 
-  const handleContextAction = async (action: string) => {
-    const paper = contextMenu.paper
+  // Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    variant: 'default' | 'destructive'
+    action: () => void
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'default',
+    action: () => { },
+  })
+
+  // Helper to get paper from argument or context menu
+  const getActionPaper = (p?: Paper) => p || contextMenu.paper
+
+  const handleContextAction = async (action: string, explicitPaper?: Paper) => {
+    const paper = getActionPaper(explicitPaper)
     if (!paper) return
 
     closeContextMenu()
@@ -265,13 +285,30 @@ export function PaperTable(props: PaperTableProps) {
         await api.openPdf(paper.bibcode)
         break
       case 'embed_pdf':
-        await api.embedPdf(paper.bibcode)
+        embedPdf.mutate(paper.bibcode, {
+          onError: (err) => {
+            alert(`Failed to embed PDF: ${err.message}`)
+          }
+        })
+        break
+      case 'delete_embedding':
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Delete PDF Embedding',
+          message: 'Are you sure you want to delete the search index for this PDF? The PDF file will remain.',
+          variant: 'destructive',
+          action: async () => {
+            await deletePdfEmbedding.mutateAsync(paper.bibcode).catch(err => {
+              alert(`Failed to delete embedding: ${err.message}`)
+            })
+            setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+          }
+        })
         break
       case 'copy_bibtex':
         if (paper.bibtex) {
           await navigator.clipboard.writeText(paper.bibtex)
         } else {
-          // Fetch from ADS if not cached
           try {
             const result = await api.getCitationExport(paper.bibcode)
             if (result.bibtex) {
@@ -286,7 +323,6 @@ export function PaperTable(props: PaperTableProps) {
         if (paper.bibitem_aastex) {
           await navigator.clipboard.writeText(paper.bibitem_aastex)
         } else {
-          // Fetch from ADS if not cached
           try {
             const result = await api.getCitationExport(paper.bibcode)
             if (result.bibitem_aastex) {
@@ -301,9 +337,16 @@ export function PaperTable(props: PaperTableProps) {
         await navigator.clipboard.writeText(paper.bibcode)
         break
       case 'delete':
-        if (confirm('Are you sure you want to delete this paper?')) {
-          await deletePaper.mutateAsync(paper.bibcode)
-        }
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Delete Paper',
+          message: 'Are you sure you want to delete this paper from your library?',
+          variant: 'destructive',
+          action: async () => {
+            await deletePaper.mutateAsync(paper.bibcode)
+            setConfirmDialog(prev => ({ ...prev, isOpen: false }))
+          }
+        })
         break
     }
   }
@@ -490,11 +533,27 @@ export function PaperTable(props: PaperTableProps) {
         const paper = info.row.original
         const { pdf_embedded, pdf_path } = paper
 
+        const isEmbedding = embedPdf.isPending && embedPdf.variables === paper.bibcode
+        const isDeletingEmbedding = deletePdfEmbedding.isPending && deletePdfEmbedding.variables === paper.bibcode
+
         if (pdf_embedded) {
+          // Already embedded - click to delete embedding
           return (
-            <span title="PDF embedded">
-              <Icon icon={Check} size={16} className="text-green-500" />
-            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                handleContextAction('delete_embedding', paper)
+              }}
+              className="hover:scale-110 transition-transform group"
+              title="PDF embedded (Click to remove)"
+              disabled={isDeletingEmbedding}
+            >
+              {isDeletingEmbedding ? (
+                <Loader2 size={16} className="animate-spin text-muted-foreground" />
+              ) : (
+                <Icon icon={Check} size={16} className="text-green-500 group-hover:text-destructive" />
+              )}
+            </button>
           )
         }
 
@@ -504,13 +563,14 @@ export function PaperTable(props: PaperTableProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                embedPdf.mutate(paper.bibcode)
+                // Use handleContextAction to unify or direct call
+                handleContextAction('embed_pdf', paper)
               }}
               className="hover:scale-110 transition-transform"
               title="Embed PDF for search"
-              disabled={embedPdf.isPending}
+              disabled={isEmbedding}
             >
-              {embedPdf.isPending ? (
+              {isEmbedding ? (
                 <Loader2 size={16} className="animate-spin text-muted-foreground" />
               ) : (
                 <Icon icon={BookOpen} size={16} className="text-muted-foreground hover:text-primary" />
@@ -641,6 +701,37 @@ export function PaperTable(props: PaperTableProps) {
         </div>
       )}
 
+      {/* Confirmation Modal */}
+      <Modal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        title={confirmDialog.title}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p>{confirmDialog.message}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="px-4 py-2 hover:bg-secondary rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDialog.action}
+              className={cn(
+                "px-4 py-2 text-white rounded-md transition-colors",
+                confirmDialog.variant === 'destructive'
+                  ? "bg-destructive hover:bg-destructive/90"
+                  : "bg-primary hover:bg-primary/90"
+              )}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Context Menu */}
       {contextMenu.isOpen && contextMenu.paper && (
         <div
@@ -762,6 +853,16 @@ export function PaperTable(props: PaperTableProps) {
             >
               <Icon icon={BookOpen} size={16} />
               Embed PDF
+            </button>
+          )}
+
+          {contextMenu.paper.pdf_embedded && (
+            <button
+              onClick={() => handleContextAction('delete_embedding')}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-secondary text-destructive"
+            >
+              <Icon icon={Trash2} size={16} />
+              Delete Embedding
             </button>
           )}
 

@@ -131,3 +131,16 @@ export function useEmbedPdf() {
     },
   })
 }
+
+export function useDeletePdfEmbedding() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (bibcode: string) => api.deletePdfEmbedding(bibcode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers'] })
+      queryClient.invalidateQueries({ queryKey: ['paper'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
+}

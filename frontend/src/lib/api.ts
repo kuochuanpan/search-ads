@@ -469,6 +469,7 @@ export const api = {
     is_my_paper?: boolean
     has_note?: boolean
     search?: string
+    search_pdf?: boolean
     sort_by?: 'title' | 'year' | 'citation_count' | 'created_at' | 'updated_at' | 'journal' | 'authors'
     sort_order?: 'asc' | 'desc'
   }) => {
@@ -798,6 +799,11 @@ export const api = {
   embedPdf: (bibcode: string) =>
     request<{ message: string; success: boolean }>(`/pdf/${encodeURIComponent(bibcode)}/embed`, {
       method: 'POST',
+    }),
+
+  deletePdfEmbedding: (bibcode: string) =>
+    request<{ message: string; success: boolean }>(`/pdf/${encodeURIComponent(bibcode)}/embed`, {
+      method: 'DELETE',
     }),
 
   openPdf: (bibcode: string) =>
