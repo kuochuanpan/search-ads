@@ -242,6 +242,8 @@ cd ~/search-ads
 
 Search-ADS usually runs as a web application, but you can also build a native macOS application using Tauri.
 
+**Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases)
+
 **Prerequisites:**
 - Rust and Cargo (install via [rustup.rs](https://rustup.rs))
 - Node.js and npm
