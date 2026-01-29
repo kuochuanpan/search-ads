@@ -5,9 +5,11 @@ import json
 from src.core.llm_client import LLMClient, ContextAnalysis, CitationType, RankedPaper
 from src.db.models import Paper
 
+# We need to mock settings before creating the client
 @pytest.fixture
 def mock_settings():
     with patch("src.core.llm_client.settings") as mock:
+        mock.llm_provider = "openai"
         mock.anthropic_api_key = "test_anthropic_key"
         mock.openai_api_key = "test_openai_key"
         mock.anthropic_model = "claude-3-opus"
@@ -17,24 +19,15 @@ def mock_settings():
 @pytest.fixture
 def client(mock_settings):
     with patch("src.core.llm_client.ApiUsageRepository") as mock_repo:
-        return LLMClient(prefer_anthropic=True)
+        # LLMClient now takes no args, reads from settings
+        return LLMClient()
 
 class TestLLMClient:
     def test_init(self, client):
-        assert client.prefer_anthropic is True
+        assert client.provider == "openai"
         assert client._anthropic_client is None
         assert client._openai_client is None
         assert client.usage_repo is not None
-
-    def test_get_available_backend_anthropic(self, client):
-        client._anthropic_client = MagicMock()
-        assert client._get_available_backend() == "anthropic"
-
-    def test_get_available_backend_openai(self, client):
-        client.prefer_anthropic = False
-        client._openai_client = MagicMock()
-        client._anthropic_client = None
-        assert client._get_available_backend() == "openai"
 
     def test_analyze_context(self, client):
         # Mock the LLM response

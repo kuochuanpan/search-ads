@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
 from src.core.config import settings
 from src.db.models import Paper
@@ -46,19 +46,18 @@ class RankedPaper:
 class LLMClient:
     """Client for LLM-based context analysis and paper ranking.
 
-    Supports both Anthropic Claude and OpenAI APIs with automatic fallback.
+    Supports OpenAI, Anthropic, Gemini, and Ollama APIs.
     """
 
-    def __init__(self, prefer_anthropic: bool = True):
-        """Initialize the LLM client.
-
-        Args:
-            prefer_anthropic: If True, prefer Claude over OpenAI when both are available
-        """
-        self.prefer_anthropic = prefer_anthropic
+    def __init__(self):
+        """Initialize the LLM client."""
         self.usage_repo = ApiUsageRepository()
         self._anthropic_client = None
         self._openai_client = None
+        self._gemini_configured = False
+        
+        # Configure providers based on settings
+        self.provider = settings.llm_provider
 
     @property
     def anthropic_client(self):
@@ -86,23 +85,21 @@ class LLMClient:
                 pass
         return self._openai_client
 
-    def _get_available_backend(self) -> str:
-        """Determine which LLM backend to use."""
-        if self.prefer_anthropic and self.anthropic_client:
-            return "anthropic"
-        elif self.openai_client:
-            return "openai"
-        elif self.anthropic_client:
-            return "anthropic"
-        else:
-            raise LLMNotAvailable(
-                "No LLM API available. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY"
-            )
+    def _configure_gemini(self) -> bool:
+        """Lazy configure Gemini."""
+        if not self._gemini_configured and settings.gemini_api_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=settings.gemini_api_key)
+                self._gemini_configured = True
+            except ImportError:
+                pass
+        return self._gemini_configured
 
     def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         """Call Claude API."""
         if not self.anthropic_client:
-            raise ValueError("Anthropic client not initialized")
+            raise ValueError("Anthropic client not initialized. Check API key.")
             
         response = self.anthropic_client.messages.create(
             model=settings.anthropic_model,
@@ -117,7 +114,7 @@ class LLMClient:
     def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
         """Call OpenAI API."""
         if not self.openai_client:
-            raise ValueError("OpenAI client not initialized")
+            raise ValueError("OpenAI client not initialized. Check API key.")
             
         response = self.openai_client.chat.completions.create(
             model=settings.openai_model,
@@ -131,28 +128,87 @@ class LLMClient:
         self.usage_repo.increment_openai()
         return response.choices[0].message.content
 
-    def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
-        """Call the appropriate LLM backend with automatic fallback."""
-        backend = self._get_available_backend()
+    def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
+        """Call Google Gemini API."""
+        if not self._configure_gemini():
+            raise ValueError("Gemini not configured or google-generativeai not installed.")
+        
+        import google.generativeai as genai
+        
+        # Gemini handles system prompts via generation config or model init, 
+        # but simplest is to prepend to user prompt or use system_instruction if supported by updated lib.
+        # We'll try the modern way.
+        try:
+            model = genai.GenerativeModel(
+                model_name=settings.gemini_model,
+                system_instruction=system_prompt
+            )
+        except Exception:
+            # Fallback for older versions or if system_instruction fails
+            model = genai.GenerativeModel(model_name=settings.gemini_model)
+            user_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-        if backend == "anthropic":
-            try:
+        response = model.generate_content(
+            user_prompt,
+            generation_config=genai.types.GenerationConfig(
+                candidate_count=1,
+                max_output_tokens=4096,
+                temperature=0.0,
+            )
+        )
+        return response.text
+
+    def _call_ollama(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
+        """Call Ollama API via HTTP."""
+        import requests
+        
+        # Llama3 and recent models support system prompts properly
+        payload = {
+            "model": settings.ollama_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 4096
+            }
+        }
+        
+        if kwargs.get("json_mode"):
+             payload["format"] = "json"
+        
+        try:
+            response = requests.post(
+                f"{settings.ollama_base_url}/api/chat",
+                json=payload,
+                timeout=120
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["message"]["content"]
+        except requests.RequestException as e:
+            raise ValueError(f"Ollama API call failed: {e}")
+
+    def _call_llm(self, system_prompt: str, user_prompt: str, json_mode: bool = False) -> str:
+        """Call the configured LLM backend."""
+        provider = self.provider
+
+        try:
+            if provider == "anthropic":
                 return self._call_anthropic(system_prompt, user_prompt)
-            except Exception as e:
-                # Fallback to OpenAI if Anthropic fails (e.g., no credits)
-                if self.openai_client:
-                    print(f"Anthropic API error: {e}. Falling back to OpenAI...")
-                    return self._call_openai(system_prompt, user_prompt)
-                raise
-        else:
-            try:
+            elif provider == "openai":
                 return self._call_openai(system_prompt, user_prompt)
-            except Exception as e:
-                # Fallback to Anthropic if OpenAI fails
-                if self.anthropic_client:
-                    print(f"OpenAI API error: {e}. Falling back to Anthropic...")
-                    return self._call_anthropic(system_prompt, user_prompt)
-                raise
+            elif provider == "gemini":
+                return self._call_gemini(system_prompt, user_prompt)
+            elif provider == "ollama":
+                # Ollama support might be limited by model capabilities, but we try
+                return self._call_ollama(system_prompt, user_prompt, json_mode=json_mode)
+            else:
+                raise ValueError(f"Unknown LLM provider: {provider}")
+        except Exception as e:
+            raise LLMNotAvailable(f"LLM provider '{provider}' failed: {str(e)}")
 
     def analyze_context(self, latex_context: str) -> ContextAnalysis:
         """Analyze LaTeX context to understand citation needs.
@@ -194,16 +250,20 @@ Return ONLY the JSON object, no additional text."""
 
 Return the JSON analysis."""
 
-        response = self._call_llm(system_prompt, user_prompt)
+        response = self._call_llm(system_prompt, user_prompt, json_mode=True)
 
         # Parse JSON response
         try:
             # Handle potential markdown code blocks
             response = response.strip()
             if response.startswith("```"):
-                response = response.split("```")[1]
-                if response.startswith("json"):
-                    response = response[4:]
+                # Handle generic code block or json block
+                parts = response.split("```")
+                if len(parts) > 1:
+                    content = parts[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                    response = content
             response = response.strip()
 
             data = json.loads(response)
@@ -237,23 +297,9 @@ Return the JSON analysis."""
         # Get words longer than 4 characters, excluding common words
         words = re.findall(r"\b[a-zA-Z]{4,}\b", clean_text.lower())
         stopwords = {
-            "that",
-            "this",
-            "with",
-            "from",
-            "have",
-            "been",
-            "were",
-            "which",
-            "their",
-            "there",
-            "about",
-            "would",
-            "could",
-            "should",
-            "these",
-            "those",
-            "other",
+            "that", "this", "with", "from", "have", "been", "were", "which",
+            "their", "there", "about", "would", "could", "should", "these",
+            "those", "other",
         }
         keywords = [w for w in words if w not in stopwords][:5]
 
@@ -350,9 +396,12 @@ Rank these papers."""
                 # Cleanup and parse
                 response = response.strip()
                 if response.startswith("```"):
-                    response = response.split("```")[1]
-                    if response.startswith("json"):
-                        response = response[4:]
+                    parts = response.split("```")
+                    if len(parts) > 1:
+                        content = parts[1]
+                        if content.startswith("json"):
+                            content = content[4:]
+                        response = content
                 
                 rankings = json.loads(response.strip())
                 
@@ -377,10 +426,15 @@ Rank these papers."""
                 return []
 
         # Run batches in parallel
+        # Note: If using Ollama, we might want to limit workers to avoid overloading local inference
+        max_workers = 5
+        if self.provider == "ollama":
+            max_workers = 1 # Sequential for local LLM
+            
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
         all_ranked_papers = []
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_batch = {executor.submit(process_batch, batch): batch for batch in batches}
             for future in as_completed(future_to_batch):
                 try:
@@ -393,13 +447,6 @@ Rank these papers."""
         if not all_ranked_papers:
             return self._fallback_ranking(papers, context_analysis, top_k, notes_map)
             
-        # Add any papers that weren't ranked (optional, maybe fallback for them?)
-        # For simple logic, we just sorting what we got.
-        # Actually, let's include unranked papers with score 0 if we want completeness, 
-        # but the fallback usually handles completely failed requests. 
-        # Mixing partial LLM results with fallback might be messy. 
-        # Let's assume reliable LLM for now or fallback if count is low.
-        
         if len(all_ranked_papers) < len(papers) * 0.5: # If >50% failed
              print("Too many failures, falling back to heuristic ranking")
              return self._fallback_ranking(papers, context_analysis, top_k, notes_map)
@@ -475,7 +522,7 @@ Rank these papers."""
         """
         system_prompt = """You are a scientific writing assistant. Generate a brief (1-2 sentence)
 explanation of why a specific paper should be cited in a given context.
-Be specific about what aspect of the paper is relevant."""
+Be specific about what aspect of the paper is relevant. Return ONLY the explanation."""
 
         user_prompt = f"""Context requiring citation:
 {context}
@@ -514,12 +561,15 @@ Return ONLY a JSON array of strings, nothing else."""
         user_prompt = f"Extract search keywords from: {text}"
 
         try:
-            response = self._call_llm(system_prompt, user_prompt)
+            response = self._call_llm(system_prompt, user_prompt, json_mode=True)
             response = response.strip()
             if response.startswith("```"):
-                response = response.split("```")[1]
-                if response.startswith("json"):
-                    response = response[4:]
+                parts = response.split("```")
+                if len(parts) > 1:
+                    content = parts[1]
+                    if content.startswith("json"):
+                         content = content[4:]
+                    response = content
             return json.loads(response.strip())
         except (json.JSONDecodeError, Exception):
             # Fallback to simple extraction

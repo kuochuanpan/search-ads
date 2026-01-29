@@ -366,6 +366,8 @@ async def ai_search_stream(
                     "data": ai_analysis.model_dump()
                 }) + "\n"
             except Exception as e:
+                import traceback
+                print(f"Analysis failed details: {traceback.format_exc()}")
                 yield json.dumps({"type": "log", "level": "error", "message": f"Analysis failed: {e}"}) + "\n"
 
         # Step 2: Library Search

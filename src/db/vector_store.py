@@ -1,16 +1,92 @@
 """Vector store using ChromaDB for semantic search over paper abstracts."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
+
+from chromadb import Documents, EmbeddingFunction, Embeddings
 
 from src.core.config import settings
 from src.db.models import Paper
 
 
+class OllamaEmbeddingFunction(EmbeddingFunction):
+    """Custom embedding function for Ollama."""
+
+    def __init__(self, base_url: str, model_name: str):
+        self.base_url = base_url
+        self.model_name = model_name
+
+    def __call__(self, input: Documents) -> Embeddings:
+        """Generate embeddings for a list of documents."""
+        import requests
+
+        embeddings = []
+        for text in input:
+            try:
+                response = requests.post(
+                    f"{self.base_url}/api/embeddings",
+                    json={"model": self.model_name, "prompt": text},
+                    timeout=60,
+                )
+                response.raise_for_status()
+                data = response.json()
+                embeddings.append(data["embedding"])
+            except Exception as e:
+                # In production, might want to retry or handle better
+                print(f"Ollama embedding failed for text snippet: {e}")
+                # Fallback to zero vector or raise? Raising is safer.
+                raise ValueError(f"Ollama embedding failed: {e}")
+        return embeddings
+
+
+class GoogleGeminiEmbeddingFunction(EmbeddingFunction):
+    """Custom embedding function for Gemini."""
+    
+    def __init__(self, api_key: str, model_name: str):
+        self.api_key = api_key
+        self.model_name = model_name
+        self._configured = False
+
+    def _configure(self):
+        if not self._configured:
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            self._configured = True
+
+    def __call__(self, input: Documents) -> Embeddings:
+        """Generate embeddings for a list of documents."""
+        self._configure()
+        import google.generativeai as genai
+        
+        # Gemini embedding endpoint supports batch?
+        # genai.embed_content supports list of content.
+        # model = 'models/embedding-001' (or settings.ollama_embedding_model mapped?)
+        # Actually user settings has gemini_model (for LLM) but what about embedding?
+        # We should use 'models/text-embedding-004' or similar.
+        # But 'embedding-001' is common. settings doesn't have explicit gemini_embedding_model.
+        # We'll use 'models/text-embedding-004' as default if not specified, 
+        # or maybe we should add GEMINI_EMBEDDING_MODEL to config? 
+        # The prompt said "ollama_embedding_model". 
+        # I'll default to 'models/text-embedding-004' which is newest.
+        
+        model = "models/text-embedding-004" 
+        
+        try:
+            result = genai.embed_content(
+                model=model,
+                content=input,
+                task_type="retrieval_document",
+                title=None
+            )
+            return result['embedding']
+        except Exception as e:
+             raise ValueError(f"Gemini embedding failed: {e}")
+
+
 class VectorStore:
     """ChromaDB-based vector store for paper embeddings.
 
-    Uses OpenAI's text-embedding-3-small model for generating embeddings.
+    Uses configured provider (OpenAI, Gemini, Ollama) for generating embeddings.
     Stores embeddings in a persistent ChromaDB database.
     """
 
@@ -51,20 +127,42 @@ class VectorStore:
 
     @property
     def embedding_function(self):
-        """Get the embedding function (OpenAI or fallback)."""
+        """Get the embedding function based on configuration."""
         if self._embedding_function is None:
-            if settings.openai_api_key:
-                from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+            provider = settings.embedding_provider
+            
+            if provider == "openai":
+                if settings.openai_api_key:
+                    from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
-                self._embedding_function = OpenAIEmbeddingFunction(
-                    api_key=settings.openai_api_key,
-                    model_name="text-embedding-3-small",
+                    self._embedding_function = OpenAIEmbeddingFunction(
+                        api_key=settings.openai_api_key,
+                        model_name="text-embedding-3-small",
+                    )
+                else:
+                    # Fallback or error?
+                     raise ValueError("OpenAI API key not set for embeddings")
+
+            elif provider == "gemini":
+                if settings.gemini_api_key:
+                    self._embedding_function = GoogleGeminiEmbeddingFunction(
+                        api_key=settings.gemini_api_key,
+                        model_name="models/text-embedding-004"
+                    )
+                else:
+                    raise ValueError("Gemini API key not set for embeddings")
+            
+            elif provider == "ollama":
+                self._embedding_function = OllamaEmbeddingFunction(
+                    base_url=settings.ollama_base_url,
+                    model_name=settings.ollama_embedding_model
                 )
+            
             else:
-                # Fallback to default embedding function (sentence-transformers)
+                 # Fallback to default embedding function (sentence-transformers)
                 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-
                 self._embedding_function = DefaultEmbeddingFunction()
+                
         return self._embedding_function
 
     def _get_or_create_collection(self, name: str, description: str):
@@ -172,23 +270,40 @@ class VectorStore:
         doc_text = "\n\n".join([p for p in parts if p])
 
         # Prepare metadata
+        # Truncate string fields to satisfy Chroma limits
         metadata = {
             "bibcode": paper.bibcode,
-            "title": paper.title,
+            "title": paper.title[:1000] if paper.title else "",
             "year": paper.year or 0,
             "citation_count": paper.citation_count or 0,
-            "first_author": paper.first_author,
+            "first_author": paper.first_author[:100],
             "is_my_paper": paper.is_my_paper,
             "has_note": bool(note_content),
-            "authors": authors_str[:1000] if authors_str else "", # Truncate if too long (Chroma limit)
+            "authors": authors_str[:1000] if authors_str else "", 
         }
 
         # Add to collection (upsert)
-        self.abstracts_collection.upsert(
-            ids=[paper.bibcode],
-            documents=[doc_text],
-            metadatas=[metadata],
-        )
+        try:
+            self.abstracts_collection.upsert(
+                ids=[paper.bibcode],
+                documents=[doc_text],
+                metadatas=[metadata],
+            )
+        except Exception as e:
+            # Check for dimension mismatch (InvalidArgumentError from Chroma)
+            if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print(f"Dimension mismatch detected. Clearing abstracts collection to rebuild with current provider.")
+                self.client.delete_collection(self.ABSTRACTS_COLLECTION)
+                self._abstracts_collection = None # Force re-creation
+                
+                # Retry once
+                self.abstracts_collection.upsert(
+                    ids=[paper.bibcode],
+                    documents=[doc_text],
+                    metadatas=[metadata],
+                )
+            else:
+                raise e
 
         return True
 
@@ -221,10 +336,10 @@ class VectorStore:
             metadatas = [
                 {
                     "bibcode": p.bibcode,
-                    "title": p.title,
+                    "title": p.title[:1000] if p.title else "",
                     "year": p.year or 0,
                     "citation_count": p.citation_count or 0,
-                    "first_author": p.first_author,
+                    "first_author": p.first_author[:100],
                 }
                 for p in batch
             ]
@@ -375,11 +490,26 @@ class VectorStore:
         ]
 
         # Add to collection
-        self.pdf_collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-        )
+        try:
+            self.pdf_collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+            )
+        except Exception as e:
+             if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print(f"Dimension mismatch detected. Clearing PDF collection to rebuild.")
+                self.client.delete_collection(self.PDF_COLLECTION)
+                self._pdf_collection = None
+                
+                # Retry once
+                self.pdf_collection.add(
+                    ids=ids,
+                    documents=documents,
+                    metadatas=metadatas,
+                )
+             else:
+                raise e
 
         return len(chunks)
 
@@ -544,11 +674,26 @@ class VectorStore:
         }
 
         # Add to collection
-        self.notes_collection.add(
-            ids=[note_id],
-            documents=[note.content],
-            metadatas=[metadata],
-        )
+        try:
+            self.notes_collection.add(
+                ids=[note_id],
+                documents=[note.content],
+                metadatas=[metadata],
+            )
+        except Exception as e:
+             if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print(f"Dimension mismatch detected. Clearing notes collection to rebuild.")
+                self.client.delete_collection(self.NOTES_COLLECTION)
+                self._notes_collection = None
+                
+                # Retry once
+                self.notes_collection.add(
+                    ids=[note_id],
+                    documents=[note.content],
+                    metadatas=[metadata],
+                )
+             else:
+                raise e
 
         return True
 

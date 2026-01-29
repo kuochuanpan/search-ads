@@ -47,16 +47,42 @@ ENV_TEMPLATE = """# Search-ADS Configuration
 # Get your ADS API key from: https://ui.adsabs.harvard.edu/user/settings/token
 ADS_API_KEY=
 
-# OpenAI API key for embeddings and LLM features (optional)
+# ------------------------------------------------------------------------------
+# Provider Selection
+# ------------------------------------------------------------------------------
+# LLM Provider for chat/ranking: openai, anthropic, gemini, ollama
+LLM_PROVIDER="openai"
+
+# Embedding Provider for vector search: openai, gemini, ollama
+# Note: Changing this requires re-indexing (search-ads db clear && search-ads db embed)
+EMBEDDING_PROVIDER="openai"
+
+# ------------------------------------------------------------------------------
+# API Keys & Models
+# ------------------------------------------------------------------------------
+# OpenAI
 # Get your key from: https://platform.openai.com/api-keys
 OPENAI_API_KEY=
 OPENAI_MODEL="gpt-4o-mini"
 
-# Anthropic API key for Claude LLM features (optional)
+# Anthropic
 # Get your key from: https://console.anthropic.com/
 #ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL="claude-3-haiku-20240307"
 
+# Gemini (Google)
+# Get your key from: https://aistudio.google.com/app/apikey
+#GEMINI_API_KEY=
+GEMINI_MODEL="gemini-1.5-flash"
+
+# Ollama (Local)
+#OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="llama3"
+OLLAMA_EMBEDDING_MODEL="nomic-embed-text"
+
+# ------------------------------------------------------------------------------
+# Other Settings
+# ------------------------------------------------------------------------------
 # Author name(s) for auto-detecting "my papers" (semicolon-separated, optional)
 # Example: MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 #MY_AUTHOR_NAMES=
@@ -95,6 +121,110 @@ def init(
     console.print("  3. Optionally add OpenAI key for semantic search")
     console.print("\n[dim]Then run: search-ads seed <paper-url> to add your first paper[/dim]")
 
+
+@app.command()
+def config(
+    show_secrets: bool = typer.Option(False, "--show-secrets", help="Show API keys in output"),
+    llm_provider: Optional[str] = typer.Option(None, "--llm-provider", help="Set LLM provider (openai, anthropic, gemini, ollama)"),
+    embedding_provider: Optional[str] = typer.Option(None, "--embedding-provider", help="Set embedding provider (openai, gemini, ollama)"),
+    openai_key: Optional[str] = typer.Option(None, "--openai-key", help="Set OpenAI API key"),
+    anthropic_key: Optional[str] = typer.Option(None, "--anthropic-key", help="Set Anthropic API key"),
+    gemini_key: Optional[str] = typer.Option(None, "--gemini-key", help="Set Gemini API key"),
+    ads_key: Optional[str] = typer.Option(None, "--ads-key", help="Set ADS API key"),
+    ollama_url: Optional[str] = typer.Option(None, "--ollama-url", help="Set Ollama base URL"),
+):
+    """View or update configuration."""
+    ensure_data_dirs()
+    
+    # Handle updates
+    changes_made = False
+    
+    if llm_provider:
+        if llm_provider not in ["openai", "anthropic", "gemini", "ollama"]:
+            console.print(f"[red]Invalid LLM provider: {llm_provider}[/red]")
+            raise typer.Exit(1)
+        settings.save_models(
+            llm_provider=llm_provider,
+            embedding_provider=settings.embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=settings.ollama_base_url
+        )
+        console.print(f"[green]Set LLM provider to: {llm_provider}[/green]")
+        changes_made = True
+
+    if embedding_provider:
+        if embedding_provider not in ["openai", "gemini", "ollama"]:
+            console.print(f"[red]Invalid embedding provider: {embedding_provider}[/red]")
+            raise typer.Exit(1)
+            
+        settings.save_models(
+            llm_provider=settings.llm_provider,
+            embedding_provider=embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=settings.ollama_base_url
+        )
+        console.print(f"[green]Set embedding provider to: {embedding_provider}[/green]")
+        console.print("[yellow]Note: Changing embedding provider requires re-indexing.[/yellow]")
+        console.print("[dim]Run 'search-ads db clear' then re-embed your papers.[/dim]")
+        changes_made = True
+
+    if ollama_url:
+        settings.save_models(
+            llm_provider=settings.llm_provider,
+            embedding_provider=settings.embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=ollama_url
+        )
+        console.print(f"[green]Set Ollama URL to: {ollama_url}[/green]")
+        changes_made = True
+
+    if any([openai_key, anthropic_key, gemini_key, ads_key]):
+        settings.save_api_keys(
+            ads_key=ads_key,
+            openai_key=openai_key,
+            anthropic_key=anthropic_key,
+            gemini_key=gemini_key
+        )
+        console.print("[green]Updated API keys[/green]")
+        changes_made = True
+
+    if changes_made:
+        console.print()
+
+    # Show current config
+    table = Table(title="Current Configuration")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    
+    table.add_row("LLM Provider", settings.llm_provider)
+    table.add_row("Embedding Provider", settings.embedding_provider)
+    
+    # helper for masking
+    def mask(key):
+        return (key[:4] + "..." + key[-4:]) if key and len(key) > 10 else "Set" if key else "Not set"
+
+    if show_secrets:
+        mask = lambda x: x if x else "Not set"
+
+    table.add_row("ADS Key", mask(settings.ads_api_key))
+    table.add_row("OpenAI Key", mask(settings.openai_api_key))
+    table.add_row("Anthropic Key", mask(settings.anthropic_api_key))
+    table.add_row("Gemini Key", mask(settings.gemini_api_key))
+    table.add_row("Ollama URL", settings.ollama_base_url)
+    
+    console.print(table)
 
 def _display_paper(paper: Paper, show_abstract: bool = True):
     """Display a paper in a nice format."""
@@ -450,8 +580,8 @@ def find(
                 console.print("[yellow]Using basic keyword extraction...[/yellow]\n")
 
         # Step 2: Search for papers
-        search_keywords = analysis.keywords if analysis else context.split()[:5]
-        search_query = analysis.search_query if analysis else context
+        search_keywords = analysis.keywords if (analysis and analysis.keywords) else context.split()[:5]
+        search_query = analysis.search_query if (analysis and analysis.search_query) else context
 
         if local_only:
             # Search local database only

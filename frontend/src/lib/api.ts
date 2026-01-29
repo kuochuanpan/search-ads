@@ -95,9 +95,12 @@ export interface ApiUsageResponse {
 }
 
 export interface SettingsResponse {
+  version: string
   data_dir: string
   db_path: string
   pdfs_path: string
+  llm_provider: string
+  embedding_provider: string
   max_hops: number
   top_k: number
   min_citation_count: number
@@ -107,8 +110,13 @@ export interface SettingsResponse {
   has_ads_key: boolean
   has_openai_key: boolean
   has_anthropic_key: boolean
+  has_gemini_key: boolean
   openai_model: string
   anthropic_model: string
+  gemini_model: string
+  ollama_model: string
+  ollama_embedding_model: string
+  ollama_base_url: string
   my_author_names: string
 }
 
@@ -116,6 +124,7 @@ export interface ApiKeysRequest {
   ads_api_key?: string
   openai_api_key?: string
   anthropic_api_key?: string
+  gemini_api_key?: string
 }
 
 export interface AuthorNamesResponse {
@@ -832,7 +841,7 @@ export const api = {
       notes_count: number
     }>('/settings/vector-stats'),
 
-  testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
+  testApiKey: (service: 'ads' | 'openai' | 'anthropic' | 'gemini' | 'ollama') =>
     request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`, {
       method: 'POST',
     }),
@@ -851,10 +860,19 @@ export const api = {
       body: JSON.stringify(keys),
     }),
 
-  updateModels: (openai_model: string, anthropic_model: string) =>
+  updateModels: (params: {
+    llm_provider: string
+    embedding_provider: string
+    openai_model: string
+    anthropic_model: string
+    gemini_model: string
+    ollama_model: string
+    ollama_embedding_model: string
+    ollama_base_url: string
+  }) =>
     request<{ message: string; success: boolean }>('/settings/models', {
       method: 'PUT',
-      body: JSON.stringify({ openai_model, anthropic_model }),
+      body: JSON.stringify(params),
     }),
 
   clearAllData: () =>
