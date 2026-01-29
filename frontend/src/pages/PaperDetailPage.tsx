@@ -145,11 +145,32 @@ export function PaperDetailPage() {
     }
   }
 
-  const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this paper?')) {
-      await deletePaper.mutateAsync(bibcode)
-      navigate({ to: '/library' })
-    }
+  // Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    variant: 'default' | 'destructive'
+    action: () => void
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'default',
+    action: () => { },
+  })
+
+  const handleDelete = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Paper',
+      message: 'Are you sure you want to delete only this paper from your library? This will delete the paper\'s metadata, notes, PDF, and embedded PDF (if exists).',
+      variant: 'destructive',
+      action: async () => {
+        await deletePaper.mutateAsync(bibcode)
+        navigate({ to: '/library' })
+      }
+    })
   }
 
   const handleOpenNote = () => {
@@ -551,6 +572,38 @@ export function PaperDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Confirmation Modal */}
+      <Modal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        title={confirmDialog.title}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p>{confirmDialog.message}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="px-4 py-2 hover:bg-secondary rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDialog.action}
+              className={cn(
+                "px-4 py-2 text-white rounded-md transition-colors",
+                confirmDialog.variant === 'destructive'
+                  ? "bg-destructive hover:bg-destructive/90"
+                  : "bg-primary hover:bg-primary/90"
+              )}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
+

@@ -116,6 +116,34 @@ async def embed_pdf(
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
 
+@router.delete("/{bibcode}/embed", response_model=MessageResponse)
+async def delete_pdf_embedding(
+    bibcode: str,
+    paper_repo: PaperRepository = Depends(get_paper_repo),
+    vector_store=Depends(get_vector_store_dep),
+):
+    """Remove PDF embedding (un-embed)."""
+    paper = paper_repo.get(bibcode)
+    if not paper:
+        raise HTTPException(status_code=404, detail=f"Paper not found: {bibcode}")
+
+    if not paper.pdf_embedded:
+        return MessageResponse(message="PDF is not embedded")
+
+    try:
+        # Remove embedding from vector store
+        vector_store.delete_pdf(bibcode)
+
+        # Update paper status
+        paper.pdf_embedded = False
+        paper_repo.add(paper, embed=False)
+
+        return MessageResponse(message="PDF embedding removed successfully")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove embedding: {str(e)}")
+
+
 @router.get("/{bibcode}/open", response_model=MessageResponse)
 async def open_pdf(
     bibcode: str,

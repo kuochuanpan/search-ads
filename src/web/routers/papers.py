@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.db.repository import PaperRepository, NoteRepository, ProjectRepository
 from src.core.ads_client import ADSClient
-from src.web.dependencies import get_paper_repo, get_note_repo, get_project_repo, get_ads_client
+from src.web.dependencies import (
+    get_paper_repo,
+    get_note_repo,
+    get_project_repo,
+    get_ads_client,
+    get_vector_store_dep,
+)
 from src.web.schemas.paper import (
     PaperRead,
     PaperListResponse,
@@ -33,17 +39,19 @@ async def list_papers(
     is_my_paper: Optional[bool] = Query(default=None),
     has_note: Optional[bool] = Query(default=None),
     search: Optional[str] = Query(default=None),
+    search_pdf: Optional[bool] = Query(default=False),
     sort_by: Literal["title", "year", "citation_count", "created_at", "updated_at", "authors", "journal"] = Query(default="created_at"),
     sort_order: Literal["asc", "desc"] = Query(default="desc"),
     paper_repo: PaperRepository = Depends(get_paper_repo),
     note_repo: NoteRepository = Depends(get_note_repo),
     project_repo: ProjectRepository = Depends(get_project_repo),
+    vector_store=Depends(get_vector_store_dep),
 ):
     """List papers with optional filters, sorting, and pagination."""
     # Get papers from repository
     # Note: The repository's get_all has limited filtering, so we'll do some filtering in Python
     papers = paper_repo.get_all(
-        limit=1000,  # Get more to filter
+        limit=2000,  # Get more to filter - increased for search
         offset=0,
         project=project,
         year_min=year_min,
@@ -65,15 +73,31 @@ async def list_papers(
         papers = [p for p in papers if (note_repo.get(p.bibcode) is not None) == has_note]
 
     if search:
-        search_lower = search.lower()
-        papers = [
-            p for p in papers
-            if search_lower in (p.title or "").lower()
-            or search_lower in (p.abstract or "").lower()
-            or search_lower in (p.authors or "").lower()
-            or search_lower in (p.bibcode or "").lower()
-            or search_lower == str(p.year or "")
-        ]
+        if search_pdf:
+            # Vector search in PDFs
+            try:
+                results = vector_store.search_pdf(search, n_results=500)
+                # Extract matching bibcodes
+                found_bibcodes = {r['bibcode'] for r in results}
+                # Filter papers
+                papers = [p for p in papers if p.bibcode in found_bibcodes]
+            except Exception as e:
+                print(f"Error searching PDFs: {e}")
+                # Fallback to metadata search or empty?
+                # For safety, if PDF search fails, we might return nothing or fallback. 
+                # Let's fallback to metadata search as a safety net? No, user asked for PDF search.
+                papers = []
+        else:
+            # Metadata search
+            search_lower = search.lower()
+            papers = [
+                p for p in papers
+                if search_lower in (p.title or "").lower()
+                or search_lower in (p.abstract or "").lower()
+                or search_lower in (p.authors or "").lower()
+                or search_lower in (p.bibcode or "").lower()
+                or search_lower == str(p.year or "")
+            ]
 
     # Sorting
     reverse = sort_order == "desc"

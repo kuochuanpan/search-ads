@@ -4,6 +4,7 @@ import { Check, AlertCircle, RefreshCw, Trash2, Database, Key, Palette, BookOpen
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
+import { Modal } from '@/components/ui/Modal'
 import { useStats } from '@/hooks/useStats'
 import { api } from '@/lib/api'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -59,6 +60,17 @@ export function SettingsPage() {
       // Actually we should clear them because they are secure fields
       // and checking 'settings' will update the placeholders.
       // But we did inline setKey('') in the onClick handlers.
+    },
+  })
+
+  // Clear All Data state
+  const [isClearDataModalOpen, setIsClearDataModalOpen] = useState(false)
+
+  const clearDataMutation = useMutation({
+    mutationFn: () => api.clearAllData(),
+    onSuccess: () => {
+      queryClient.invalidateQueries()
+      setIsClearDataModalOpen(false)
     },
   })
 
@@ -423,11 +435,66 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground mb-4">
           These actions are irreversible. Please be careful.
         </p>
-        <Button variant="destructive" size="sm">
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => setIsClearDataModalOpen(true)}
+        >
           <Icon icon={Trash2} size={14} />
           Clear All Data
         </Button>
       </Card>
+
+      <Modal
+        isOpen={isClearDataModalOpen}
+        onClose={() => setIsClearDataModalOpen(false)}
+        title="Clear All Data"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+            <p className="font-semibold flex items-center gap-2">
+              <Icon icon={AlertCircle} size={16} />
+              Warning: Irreversible Action
+            </p>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete:
+          </p>
+          <ul className="list-disc list-inside text-sm text-muted-foreground ml-2 space-y-1">
+            <li>All papers and their metadata</li>
+            <li>All references and citations</li>
+            <li>All vector embeddings (abstracts & PDFs)</li>
+            <li>All user notes</li>
+            <li>All projects</li>
+            <li>All downloaded PDFs</li>
+          </ul>
+
+          <p className="text-sm font-medium">
+            Your configuration file (<code>~/.search-ads/.env</code>) will NOT be deleted.
+          </p>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setIsClearDataModalOpen(false)}
+              disabled={clearDataMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => clearDataMutation.mutate()}
+              disabled={clearDataMutation.isPending}
+              className="gap-2"
+            >
+              {clearDataMutation.isPending && <Loader2 size={16} className="animate-spin" />}
+              Yes, Clear Everything
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

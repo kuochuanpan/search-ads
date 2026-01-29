@@ -555,6 +555,31 @@ class ProjectRepository:
 
             return True, papers_deleted
 
+    def delete_all(self) -> int:
+        """Delete all projects.
+        
+        Returns:
+            Number of projects deleted
+        """
+        with self.db.get_session() as session:
+            # Delete all paper-project associations first
+            from src.db.models import PaperProject
+            session.exec(select(PaperProject)).all()
+            # Actually sqlmodel/sqlalchemy might not support delete directly on select without synchronize_session
+            # But we can just iterate and delete
+            associations = session.exec(select(PaperProject)).all()
+            for assoc in associations:
+                session.delete(assoc)
+            
+            # Delete all projects
+            projects = session.exec(select(Project)).all()
+            count = len(projects)
+            for project in projects:
+                session.delete(project)
+            
+            session.commit()
+            return count
+
 
 class ApiUsageRepository:
     """Repository for tracking API usage."""

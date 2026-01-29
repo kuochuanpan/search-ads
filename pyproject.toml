@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "search-ads"
-version = "0.3.0-beta"
+version = "0.6.0-beta"
 description = "CLI tool for automating scientific paper citations using NASA ADS"
 readme = "README.md"
 license = "MIT"
