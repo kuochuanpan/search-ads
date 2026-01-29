@@ -124,7 +124,6 @@ def init(
 
 @app.command()
 def config(
-    show_secrets: bool = typer.Option(False, "--show-secrets", help="Show API keys in output"),
     llm_provider: Optional[str] = typer.Option(None, "--llm-provider", help="Set LLM provider (openai, anthropic, gemini, ollama)"),
     embedding_provider: Optional[str] = typer.Option(None, "--embedding-provider", help="Set embedding provider (openai, gemini, ollama)"),
     openai_key: Optional[str] = typer.Option(None, "--openai-key", help="Set OpenAI API key"),
@@ -213,10 +212,7 @@ def config(
     
     # helper for masking
     def mask(key):
-        return (key[:4] + "..." + key[-4:]) if key and len(key) > 10 else "Set" if key else "Not set"
-
-    if show_secrets:
-        mask = lambda x: x if x else "Not set"
+        return "configured" if key else "Not set"
 
     table.add_row("ADS Key", mask(settings.ads_api_key))
     table.add_row("OpenAI Key", mask(settings.openai_api_key))
