@@ -1,10 +1,16 @@
 # Search-ADS
 
+![Version](https://img.shields.io/badge/version-0.6.0--beta-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![Tauri](https://img.shields.io/badge/tauri-v2-orange)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+
 **AI-powered reference manager for astronomers and astrophysicists.**
 
-Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search, LLM-powered analysis, and citation graph exploration to make managing your research library effortless.
+Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search and LLM-powered analysis to make managing your research library effortless.
 
-**Version: 0.1 beta**
+**Version: 0.6.0-beta**
 
 ## Screenshots
 
@@ -13,6 +19,9 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 
 **Web UI - Search**
 ![Web UI Search](docs/screenshots/webui-2.png)
+
+**macOS Native App**
+![macOS App](docs/screenshots/macOS.png)
 
 **CLI - Search & Results**
 ![CLI Search](docs/screenshots/cli-1.png)
@@ -24,13 +33,33 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 
 - **AI-Powered Search** - Find papers using natural language queries, not just keywords
 - **Semantic Search** - Search your library by meaning using vector embeddings
-- **Citation Graph** - Explore references and citations to discover related work
 - **PDF Management** - Download, store, and search through paper PDFs
 - **LLM Ranking** - Intelligently rank papers by relevance using Claude or OpenAI
 - **LaTeX Integration** - Auto-fill `\cite{}`, `\citep{}`, `\citet{}` commands
 - **BibTeX & AASTeX** - Generate bibliography entries automatically
 - **Project Organization** - Tag papers across multiple research projects
 - **Web UI & CLI** - Use whichever interface suits your workflow
+- **macOS Native App** - Standalone desktop application with Tauri
+- **Cross-Platform** - Runs on macOS, Linux, and Windows (experimental)
+
+> **Note:** The provided scripts (`install.sh`, `launch.sh`) are designed for macOS and Linux (or WSL). Windows users may need to execute the commands from these scripts manually or use WSL.
+
+
+## Requirements
+
+**For CLI only:**
+- Python 3.10+
+- pipx (recommended) or pip
+- NASA ADS API key (free)
+
+**For full installation (CLI + Web UI):**
+- All of the above, plus:
+- Node.js 18+ and npm
+- git
+
+**Optional (for AI features):**
+- OpenAI API key (for embeddings and search)
+- Anthropic API key (for LLM analysis)
 
 ## Quick Start
 
@@ -209,6 +238,26 @@ cd ~/search-ads
 ./launch.sh
 ```
 
+### macOS Native App
+
+Search-ADS usually runs as a web application, but you can also build a native macOS application using Tauri.
+
+**Prerequisites:**
+- Rust and Cargo (install via [rustup.rs](https://rustup.rs))
+- Node.js and npm
+
+**Build Instructions:**
+
+```bash
+# 1. Build the Python sidecar (backend)
+./scripts/build-sidecar.sh
+
+# 2. Build the macOS application
+cargo tauri build
+```
+
+The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app`.
+
 This starts both backend and frontend. Press `Ctrl+C` to stop.
 
 **Manual Start (for development):**
@@ -272,7 +321,6 @@ All data is stored locally in `~/.search-ads/`:
 | `find --context "..."` | Search for papers |
 | `get <bibcode>` | Get citation info |
 | `show <bibcode>` | Display paper details |
-| `expand <bibcode>` | Expand citation graph |
 | `status` | Show database stats |
 | `list-papers` | List library papers |
 | `mine` | Manage your own papers |
@@ -286,25 +334,19 @@ All data is stored locally in `~/.search-ads/`:
 
 Run `search-ads --help` for full documentation.
 
-## Requirements
 
-**For CLI only:**
-- Python 3.10+
-- pipx (recommended) or pip
-- NASA ADS API key (free)
-
-**For full installation (CLI + Web UI):**
-- All of the above, plus:
-- Node.js 18+ and npm
-- git
-
-**Optional (for AI features):**
-- OpenAI API key (for embeddings and search)
-- Anthropic API key (for LLM analysis)
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
+
+## Roadmap
+
+- [ ] **Citation Graph Exploration** - Interactive visualization of citation networks
+- [ ] **Zotero Integration** - Sync with Zotero libraries
+- [ ] **Browser Extension** - Rapidly add papers from findings pages
+- [ ] **Cloud Sync** - Sync library across devices
+- [ ] **Moltbot Integration** - AI assistant integration
 
 ## License
 
