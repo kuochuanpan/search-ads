@@ -376,10 +376,12 @@ async def test_api_key(
         if not settings.gemini_api_key:
              return {"valid": False, "message": "Gemini API key not configured"}
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=settings.gemini_api_key)
-            model = genai.GenerativeModel(settings.gemini_model)
-            model.generate_content("Hi")
+            from google import genai
+            client = genai.Client(api_key=settings.gemini_api_key)
+            client.models.generate_content(
+                model=settings.gemini_model,
+                contents="Hi",
+            )
             return {"valid": True, "message": "Gemini API key is valid"}
         except Exception as e:
             return {"valid": False, "message": f"Gemini API key test failed: {str(e)}"}

@@ -41,44 +41,30 @@ class OllamaEmbeddingFunction(EmbeddingFunction):
 
 class GoogleGeminiEmbeddingFunction(EmbeddingFunction):
     """Custom embedding function for Gemini."""
-    
+
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = model_name
-        self._configured = False
+        self._client = None
 
-    def _configure(self):
-        if not self._configured:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self._configured = True
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
 
     def __call__(self, input: Documents) -> Embeddings:
         """Generate embeddings for a list of documents."""
-        self._configure()
-        import google.generativeai as genai
-        
-        # Gemini embedding endpoint supports batch?
-        # genai.embed_content supports list of content.
-        # model = 'models/embedding-001' (or settings.ollama_embedding_model mapped?)
-        # Actually user settings has gemini_model (for LLM) but what about embedding?
-        # We should use 'models/text-embedding-004' or similar.
-        # But 'embedding-001' is common. settings doesn't have explicit gemini_embedding_model.
-        # We'll use 'models/text-embedding-004' as default if not specified, 
-        # or maybe we should add GEMINI_EMBEDDING_MODEL to config? 
-        # The prompt said "ollama_embedding_model". 
-        # I'll default to 'models/text-embedding-004' which is newest.
-        
-        model = "models/text-embedding-004" 
-        
+        client = self._get_client()
+
+        model = "text-embedding-004"
+
         try:
-            result = genai.embed_content(
+            result = client.models.embed_content(
                 model=model,
-                content=input,
-                task_type="retrieval_document",
-                title=None
+                contents=input,
             )
-            return result['embedding']
+            return [e.values for e in result.embeddings]
         except Exception as e:
              raise ValueError(f"Gemini embedding failed: {e}")
 

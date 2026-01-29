@@ -12,5 +12,5 @@ rich==14.2.0
 sqlmodel==0.0.31
 typer==0.21.1
 typer-slim==0.21.1
-google-generativeai
+google-genai
 ollama>=0.4.0

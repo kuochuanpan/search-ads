@@ -54,7 +54,7 @@ class LLMClient:
         self.usage_repo = ApiUsageRepository()
         self._anthropic_client = None
         self._openai_client = None
-        self._gemini_configured = False
+        self._gemini_client = None
         
         # Configure providers based on settings
         self.provider = settings.llm_provider
@@ -85,16 +85,15 @@ class LLMClient:
                 pass
         return self._openai_client
 
-    def _configure_gemini(self) -> bool:
-        """Lazy configure Gemini."""
-        if not self._gemini_configured and settings.gemini_api_key:
+    def _get_gemini_client(self):
+        """Lazy initialize Gemini client."""
+        if self._gemini_client is None and settings.gemini_api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=settings.gemini_api_key)
-                self._gemini_configured = True
+                from google import genai
+                self._gemini_client = genai.Client(api_key=settings.gemini_api_key)
             except ImportError:
                 pass
-        return self._gemini_configured
+        return self._gemini_client
 
     def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         """Call Claude API."""
@@ -130,31 +129,21 @@ class LLMClient:
 
     def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
         """Call Google Gemini API."""
-        if not self._configure_gemini():
-            raise ValueError("Gemini not configured or google-generativeai not installed.")
-        
-        import google.generativeai as genai
-        
-        # Gemini handles system prompts via generation config or model init, 
-        # but simplest is to prepend to user prompt or use system_instruction if supported by updated lib.
-        # We'll try the modern way.
-        try:
-            model = genai.GenerativeModel(
-                model_name=settings.gemini_model,
-                system_instruction=system_prompt
-            )
-        except Exception:
-            # Fallback for older versions or if system_instruction fails
-            model = genai.GenerativeModel(model_name=settings.gemini_model)
-            user_prompt = f"{system_prompt}\n\n{user_prompt}"
+        client = self._get_gemini_client()
+        if client is None:
+            raise ValueError("Gemini not configured or google-genai not installed.")
 
-        response = model.generate_content(
-            user_prompt,
-            generation_config=genai.types.GenerationConfig(
+        from google.genai import types
+
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
                 candidate_count=1,
                 max_output_tokens=4096,
                 temperature=0.0,
-            )
+            ),
         )
         return response.text
 
