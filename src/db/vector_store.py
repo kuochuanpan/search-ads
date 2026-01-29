@@ -125,6 +125,18 @@ class VectorStore:
             )
         return self._client
 
+    def reset_embedding_function(self):
+        """Reset the cached embedding function so it picks up new provider settings.
+
+        Call this after changing the embedding provider in settings, before
+        re-embedding. Also resets cached collections since they hold a
+        reference to the old embedding function.
+        """
+        self._embedding_function = None
+        self._abstracts_collection = None
+        self._pdf_collection = None
+        self._notes_collection = None
+
     @property
     def embedding_function(self):
         """Get the embedding function based on configuration."""
@@ -344,11 +356,26 @@ class VectorStore:
                 for p in batch
             ]
 
-            self.abstracts_collection.add(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas,
-            )
+            try:
+                self.abstracts_collection.add(
+                    ids=ids,
+                    documents=documents,
+                    metadatas=metadatas,
+                )
+            except Exception as e:
+                if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                    print("Dimension mismatch detected. Clearing abstracts collection to rebuild with current provider.")
+                    self.client.delete_collection(self.ABSTRACTS_COLLECTION)
+                    self._abstracts_collection = None
+
+                    # Retry once
+                    self.abstracts_collection.add(
+                        ids=ids,
+                        documents=documents,
+                        metadatas=metadatas,
+                    )
+                else:
+                    raise e
 
             embedded += len(batch)
 
@@ -387,12 +414,18 @@ class VectorStore:
             where = {"$and": where_clauses}
 
         # Query the collection
-        results = self.abstracts_collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            where=where,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.abstracts_collection.query(
+                query_texts=[query],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print("Embedding dimension mismatch. Run 'search-ads db embed --force' to rebuild.")
+                return []
+            raise
 
         # Format results
         formatted = []
@@ -569,12 +602,18 @@ class VectorStore:
         """
         where = {"bibcode": bibcode} if bibcode else None
 
-        results = self.pdf_collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            where=where,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.pdf_collection.query(
+                query_texts=[query],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print("Embedding dimension mismatch. Run 'search-ads db embed --force' to rebuild.")
+                return []
+            raise
 
         formatted = []
         if results["ids"] and results["ids"][0]:
@@ -711,11 +750,17 @@ class VectorStore:
         Returns:
             List of dicts with bibcode, distance, and content
         """
-        results = self.notes_collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.notes_collection.query(
+                query_texts=[query],
+                n_results=n_results,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower() and "expecting" in str(e).lower():
+                print("Embedding dimension mismatch. Run 'search-ads db embed --force' to rebuild.")
+                return []
+            raise
 
         formatted = []
         if results["ids"] and results["ids"][0]:

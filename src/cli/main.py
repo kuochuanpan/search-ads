@@ -172,7 +172,7 @@ def config(
         )
         console.print(f"[green]Set embedding provider to: {embedding_provider}[/green]")
         console.print("[yellow]Note: Changing embedding provider requires re-indexing.[/yellow]")
-        console.print("[dim]Run 'search-ads db clear' then re-embed your papers.[/dim]")
+        console.print("[dim]Run 'search-ads db embed --force' to rebuild embeddings.[/dim]")
         changes_made = True
 
     if ollama_url:
@@ -408,11 +408,29 @@ def _display_ranked_paper(ranked: RankedPaper, index: int):
     console.print()
 
 
+def _is_nonsensical_query(analysis, context: str) -> bool:
+    """Check if the LLM analysis indicates a nonsensical/unknown query.
+
+    Returns True if the analysis topic is unknown/none/empty or
+    the search query is empty, suggesting the context is not
+    meaningful scientific text (e.g., a personal note marker).
+    """
+    if not analysis:
+        return False
+    topic = (analysis.topic or "").strip().lower()
+    search_query = (analysis.search_query or "").strip()
+    if topic in ("unknown", "none", "") or not search_query:
+        return True
+    return False
+
+
 def _search_local_database(
     query: str,
     keywords: list[str],
     limit: int = 50,
     use_vector: bool = True,
+    original_context: str = "",
+    prioritize_note_text: bool = False,
 ) -> list[Paper]:
     """Search the local database using vector similarity or keywords.
 
@@ -423,6 +441,8 @@ def _search_local_database(
         keywords: Keywords for fallback text search
         limit: Maximum results to return
         use_vector: Whether to use vector search (falls back to text if unavailable)
+        original_context: The raw user context string (used for note text search)
+        prioritize_note_text: If True, search notes by exact text first before vector search
 
     Returns:
         List of matching papers
@@ -434,6 +454,19 @@ def _search_local_database(
 
     seen_bibcodes = set()
     papers = []
+
+    # If prioritizing note text search (nonsensical query), try exact text match first
+    if prioritize_note_text and original_context:
+        console.print("[dim]Prioritizing note text search for marker query[/dim]")
+        note_matches = note_repo.search_by_text(original_context, limit=limit)
+        for note_match in note_matches:
+            if note_match.bibcode not in seen_bibcodes:
+                paper = paper_repo.get(note_match.bibcode)
+                if paper:
+                    papers.append(paper)
+                    seen_bibcodes.add(note_match.bibcode)
+        if papers:
+            return papers[:limit]
 
     # Try vector search first
     if use_vector:
@@ -450,6 +483,8 @@ def _search_local_database(
                     status_parts.append(f"{notes_count} notes")
                 console.print(f"[dim]Using vector search ({', '.join(status_parts)} embedded)[/dim]")
 
+                got_abstract_results = False
+
                 # Search abstracts
                 if vector_count > 0:
                     results = vector_store.search(query, n_results=limit)
@@ -460,6 +495,8 @@ def _search_local_database(
                             if paper:
                                 papers.append(paper)
                                 seen_bibcodes.add(bibcode)
+                    if results:
+                        got_abstract_results = True
 
                 # Search notes
                 if notes_count > 0:
@@ -472,10 +509,11 @@ def _search_local_database(
                                 papers.append(paper)
                                 seen_bibcodes.add(bibcode)
 
-                if papers:
+                if papers and got_abstract_results:
                     return papers[:limit]
 
-                console.print("[yellow]No vector results, falling back to text search[/yellow]")
+                if not got_abstract_results:
+                    console.print("[yellow]Abstract vector search returned no results, supplementing with text search[/yellow]")
         except Exception as e:
             console.print(f"[yellow]Vector search unavailable: {e}[/yellow]")
             console.print("[yellow]Falling back to text search[/yellow]")
@@ -585,11 +623,15 @@ def find(
             db_count = paper_repo.count()
             console.print(f"[dim]Database has {db_count} papers[/dim]")
 
+            nonsensical = _is_nonsensical_query(analysis, context)
+
             papers = _search_local_database(
                 query=search_query,
                 keywords=search_keywords,
                 limit=top_k * 10,  # Get more to filter
                 use_vector=True,
+                original_context=context,
+                prioritize_note_text=nonsensical,
             )
 
             # Apply author and year filters to local results
@@ -636,6 +678,27 @@ def find(
                 return
 
         # Step 3: Rank papers with LLM (if available)
+        # Skip LLM ranking for nonsensical/marker queries — the LLM generates
+        # fabricated relevance explanations when the context is a personal note
+        # marker rather than scientific text.
+        if not no_llm and analysis and _is_nonsensical_query(analysis, context) and papers:
+            console.print("[dim]Skipping LLM ranking for note-marker query[/dim]\n")
+            note_repo = NoteRepository(auto_embed=False)
+            display_count = max(top_k, num_refs)
+            console.print(f"[green]Found {min(len(papers), display_count)} papers (matched via notes):[/green]\n")
+            for i, paper in enumerate(papers[:display_count], 1):
+                # Build explanation from note content
+                user_note = note_repo.get(paper.bibcode)
+                explanation = f"Matched note: {user_note.content[:200]}" if user_note else "Matched via note search"
+                ranked = RankedPaper(
+                    paper=paper,
+                    relevance_score=1.0,
+                    relevance_explanation=explanation,
+                    citation_type=CitationType.GENERAL,
+                )
+                _display_ranked_paper(ranked, i)
+            return
+
         if not no_llm and analysis:
             try:
                 llm_client = LLMClient()
@@ -1257,7 +1320,7 @@ def db_embed(
     current_count = vector_store.count()
     console.print(f"[dim]Currently {current_count} papers embedded[/dim]")
 
-    if force and current_count > 0:
+    if force:
         console.print("[yellow]Clearing existing embeddings...[/yellow]")
         vector_store.clear()
 

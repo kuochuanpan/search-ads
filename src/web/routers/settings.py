@@ -97,8 +97,11 @@ def reindex_database(vector_store, paper_repo, notes_repo):
         vector_store.clear()
         vector_store.clear_pdfs()
         vector_store.clear_notes()
-        
-        # 2. Embed all abstracts (batching is handled inside embed_papers)
+
+        # 2. Reset cached embedding function so it picks up the new provider
+        vector_store.reset_embedding_function()
+
+        # 3. Embed all abstracts (batching is handled inside embed_papers)
         papers = paper_repo.get_all(limit=10000) # Safety limit, or iterate?
         print(f"Re-indexing {len(papers)} papers...")
         count = vector_store.embed_papers(papers, batch_size=50)
