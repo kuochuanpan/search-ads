@@ -357,3 +357,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [NASA ADS](https://ui.adsabs.harvard.edu/) for the paper database
 - [ChromaDB](https://www.trychroma.com/) for vector storage
 - [Anthropic](https://anthropic.com/) and [OpenAI](https://openai.com/) for LLM APIs
+- Special thanks to **Antigravity** (Google DeepMind) for coding assistance.
+- Special thanks to **Claude Code** (Anthropic) for coding assistance.
