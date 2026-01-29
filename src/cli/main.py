@@ -1097,7 +1097,9 @@ def db_clear(
             raise typer.Exit(0)
 
     deleted = paper_repo.delete_all()
-    console.print(f"[green]Deleted {deleted} papers from the database[/green]")
+    project_repo = ProjectRepository()
+    projects_deleted = project_repo.delete_all()
+    console.print(f"[green]Deleted {deleted} papers and {projects_deleted} projects from the database[/green]")
 
 
 @db_app.command("embed")

@@ -851,6 +851,11 @@ export const api = {
       body: JSON.stringify({ openai_model, anthropic_model }),
     }),
 
+  clearAllData: () =>
+    request<{ message: string; success: boolean }>('/settings/clear-data', {
+      method: 'POST',
+    }),
+
   // AI-powered Search
   streamAISearch: (params: {
     query: string

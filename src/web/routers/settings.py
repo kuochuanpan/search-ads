@@ -244,3 +244,34 @@ async def test_api_key(
 
     else:
         raise HTTPException(status_code=400, detail=f"Unknown service: {service}")
+
+
+@router.post("/clear-data", response_model=MessageResponse)
+async def clear_data(
+    paper_repo: PaperRepository = Depends(get_paper_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
+):
+    """Clear all data (papers, projects, embeddings, PDFs, notes)."""
+    try:
+        # 1. Clear Papers (includes PDFs for papers, notes, embeddings, associations)
+        papers_deleted = paper_repo.delete_all()
+        
+        # 2. Clear Projects
+        projects_deleted = project_repo.delete_all()
+
+        # 3. Clean up any remaining PDFs just in case (orphaned files)
+        if settings.pdfs_path.exists():
+             import shutil
+             # Don't remove the dir itself, just contents
+             for item in settings.pdfs_path.iterdir():
+                 if item.is_file():
+                     item.unlink()
+                 elif item.is_dir():
+                     shutil.rmtree(item)
+
+        return MessageResponse(
+            message=f"Cleared {papers_deleted} papers and {projects_deleted} projects",
+            success=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear data: {str(e)}")
