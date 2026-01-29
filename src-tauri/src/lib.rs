@@ -1,10 +1,15 @@
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 
 /// Holds the sidecar child process for lifecycle management
 pub struct ServerState(pub Mutex<Option<CommandChild>>);
+
+pub struct AppLifecycleState {
+    pub is_quitting: AtomicBool,
+}
 
 /// HTTP client for proxying requests to backend (with redirect following enabled)
 pub struct HttpClient(pub reqwest::Client);
@@ -318,6 +323,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .manage(ServerState(Mutex::new(None)))
+        .manage(AppLifecycleState { is_quitting: AtomicBool::new(false) })
         .manage(HttpClient::new())
         .invoke_handler(tauri::generate_handler![
             start_server, stop_server, server_status,
@@ -342,17 +348,47 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let RunEvent::Exit = event {
-                // Graceful shutdown on app exit
-                let state = app_handle.state::<ServerState>();
-                let mut guard = state.0.lock().unwrap();
-                if let Some(mut child) = guard.take() {
-                    println!("Shutting down server...");
-                    let _ = child.write(b"SHUTDOWN\n");
-                    // Give it a moment to shutdown gracefully
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let _ = child.kill();
+            match event {
+                RunEvent::ExitRequested { code: _, api: _, .. } => {
+                    let state = app_handle.state::<AppLifecycleState>();
+                    state.is_quitting.store(true, Ordering::Relaxed);
                 }
+                RunEvent::WindowEvent { label, event: win_event, .. } => {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = win_event {
+                        #[cfg(target_os = "macos")]
+                        {
+                            let state = app_handle.state::<AppLifecycleState>();
+                            if !state.is_quitting.load(Ordering::Relaxed) {
+                                // On macOS, hide the window instead of closing
+                                api.prevent_close();
+                                if let Some(window) = app_handle.get_webview_window(&label) {
+                                    let _ = window.hide();
+                                }
+                            }
+                        }
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen { .. } => {
+                     if let Some(window) = app_handle.get_webview_window("main") {
+                         let _ = window.show();
+                         let _ = window.set_focus();
+                     }
+                }
+                RunEvent::Exit => {
+                    // Graceful shutdown on app exit
+                    let state = app_handle.state::<ServerState>();
+                    let mut guard = state.0.lock().unwrap();
+                    if let Some(mut child) = guard.take() {
+                        println!("Shutting down server...");
+                        let _ = child.write(b"SHUTDOWN\n");
+                        // Give it a moment to shutdown gracefully
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        let _ = child.kill();
+                    }
+                }
+                _ => {}
             }
         });
 }
+
