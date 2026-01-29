@@ -7,7 +7,7 @@ console.log('[API] Running in Tauri:', isTauri);
 const API_BASE = '/api'
 
 // Tauri invoke function - dynamically imported
-let tauriApi: { invoke: any, listen: any } | null = null;
+let tauriApi: { invoke: any, listen: any, open: any } | null = null;
 
 async function getTauri() {
   if (!isTauri) return null;
@@ -15,7 +15,8 @@ async function getTauri() {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const { listen } = await import('@tauri-apps/api/event');
-    tauriApi = { invoke, listen };
+    const { open } = await import('@tauri-apps/plugin-shell');
+    tauriApi = { invoke, listen, open };
     console.log('[API] Tauri interactors loaded');
     return tauriApi;
   } catch (e) {
@@ -465,6 +466,16 @@ async function* streamRequest<T>(path: string, options: RequestInit = {}): Async
 }
 
 export const api = {
+  // Utilities
+  openUrl: async (url: string) => {
+    const tauri = await getTauri();
+    if (tauri) {
+      await tauri.open(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  },
+
   // Papers
   getPapers: (params?: {
     limit?: number

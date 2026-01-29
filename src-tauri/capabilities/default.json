@@ -23,6 +23,7 @@
     },
     "shell:allow-stdin-write",
     "shell:allow-kill",
+    "shell:allow-open",
     "http:default",
     {
       "identifier": "http:default",
