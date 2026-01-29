@@ -58,9 +58,45 @@ export function SettingsPage() {
   const [testingKey, setTestingKey] = useState<string | null>(null);
   const [keyStatus, setKeyStatus] = useState<Record<string, { valid: boolean; message: string }>>({});
 
+  // Available models stste
+  const [availableModels, setAvailableModels] = useState<Record<string, string[]>>({});
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Fetch available models for a provider
+  const fetchModelsForProvider = async (provider: string, key?: string, baseUrl?: string) => {
+    // Only attempt fetch if we have a key (or it's local) or we want to rely on backend settings
+    // But backend will error if no key, so skipping if empty and not saved is better UX
+    if (provider !== 'ollama' && !key && !['openai', 'anthropic', 'gemini'].some(p => (settings as any)?.[`has_${p}_key`])) {
+      // No key provided and no key saved
+      return;
+    }
+
+    try {
+      // Don't send masked keys
+      const safeKey = key && !key.includes('••••') ? key : undefined;
+
+      const response = await api.getAvailableModels(provider, {
+        api_key: safeKey,
+        base_url: baseUrl
+      });
+      setAvailableModels(prev => ({
+        ...prev,
+        [provider]: response.models
+      }));
+    } catch (err) {
+      console.warn(`Failed to fetch models for ${provider}:`, err);
+    }
+  };
+
+  const fetchAllModels = async () => {
+    fetchModelsForProvider('openai', openaiKey);
+    fetchModelsForProvider('anthropic', anthropicKey);
+    fetchModelsForProvider('gemini', geminiKey);
+    fetchModelsForProvider('ollama', undefined, ollamaBaseUrl);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -93,6 +129,9 @@ export function SettingsPage() {
       setOpenaiKey(settingsData.has_openai_key ? 'sk-••••••••' : '');
       setAnthropicKey(settingsData.has_anthropic_key ? 'sk-ant-••••••••' : '');
       setGeminiKey(settingsData.has_gemini_key ? '••••••••' : '');
+
+      // Trigger model fetch
+      setTimeout(() => fetchAllModels(), 100);
 
     } catch (err) {
       console.error('Failed to fetch settings:', err);
@@ -220,8 +259,8 @@ export function SettingsPage() {
 
       {message && (
         <div className={`p-4 rounded-lg flex items-center gap-2 ${message.type === 'success'
-            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-            : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+          : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
           }`}>
           {message.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
           {message.text}
@@ -394,18 +433,24 @@ export function SettingsPage() {
               value={openaiModel}
               onChange={setOpenaiModel}
               placeholder="gpt-4o-mini"
+              suggestions={availableModels['openai']}
+              onFocus={() => fetchModelsForProvider('openai', openaiKey)}
             />
             <Input
               label="Anthropic Model"
               value={anthropicModel}
               onChange={setAnthropicModel}
               placeholder="claude-3-haiku-20240307"
+              suggestions={availableModels['anthropic']}
+              onFocus={() => fetchModelsForProvider('anthropic', anthropicKey)}
             />
             <Input
               label="Gemini Model"
               value={geminiModel}
               onChange={setGeminiModel}
               placeholder="gemini-1.5-flash"
+              suggestions={availableModels['gemini']}
+              onFocus={() => fetchModelsForProvider('gemini', geminiKey)}
             />
             <div className="grid grid-cols-2 gap-2">
               <Input
@@ -413,13 +458,24 @@ export function SettingsPage() {
                 value={ollamaModel}
                 onChange={setOllamaModel}
                 placeholder="llama3"
+                suggestions={availableModels['ollama']}
               />
               <Input
                 label="Ollama Embedding"
                 value={ollamaEmbeddingModel}
                 onChange={setOllamaEmbeddingModel}
                 placeholder="nomic-embed-text"
+                suggestions={availableModels['ollama']}
               />
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => fetchAllModels()}
+                className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                disabled={loading}
+              >
+                Refresh Available Models
+              </button>
             </div>
           </div>
         </div>
@@ -534,17 +590,54 @@ function StatRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function Input({ label, value, onChange, placeholder, type = "text" }: any) {
+function Input({ label, value, onChange, placeholder, type = "text", suggestions = [], onFocus }: any) {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Close suggestions when clicking outside would be handled by onBlur naturally
+  // logic to delay hide to allow click
+  const handleBlur = () => {
+    // Delay hiding to allow click event to fire on the list item
+    setTimeout(() => {
+      setShowSuggestions(false);
+    }, 200);
+  };
+
+  const handleFocus = (e: any) => {
+    setShowSuggestions(true);
+    if (onFocus) onFocus(e);
+  };
+
+  const handleSelect = (item: string) => {
+    onChange(item);
+    setShowSuggestions(false);
+  };
+
   return (
-    <div>
+    <div className="relative">
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         placeholder={placeholder}
         className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 dark:text-white"
+        autoComplete="off"
       />
+      {suggestions.length > 0 && showSuggestions && (
+        <ul className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {suggestions.map((s: string) => (
+            <li
+              key={s}
+              className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-200"
+              onClick={() => handleSelect(s)}
+            >
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -467,6 +467,14 @@ async function* streamRequest<T>(path: string, options: RequestInit = {}): Async
 
 export const api = {
   // Utilities
+  getAvailableModels: (provider: string, options?: { api_key?: string, base_url?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.api_key) params.append('api_key', options.api_key);
+    if (options?.base_url) params.append('base_url', options.base_url);
+    const query = params.toString();
+    return request<{ models: string[] }>(`/settings/models/${encodeURIComponent(provider)}${query ? `?${query}` : ''}`);
+  },
+
   openUrl: async (url: string) => {
     const tauri = await getTauri();
     if (tauri) {

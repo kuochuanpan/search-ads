@@ -430,3 +430,118 @@ async def clear_data(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear data: {str(e)}")
+
+
+@router.get("/models/{provider}")
+async def get_models(
+    provider: str,
+    api_key: str | None = None,
+    base_url: str | None = None
+):
+    """Get available models for a provider via settings or provided credentials."""
+    models = []
+    
+    # Use provided key or fallback to settings
+    key_to_use = api_key
+    
+    if provider == "openai":
+        if not key_to_use:
+            key_to_use = settings.openai_api_key
+            
+        if not key_to_use:
+            raise HTTPException(status_code=400, detail="OpenAI API key not configured")
+            
+        try:
+            import openai
+            client = openai.OpenAI(api_key=key_to_use)
+            response = client.models.list()
+            # Filter for GPT and newer o1/o3 models
+            # Exclude likely non-chat models if possible, but keeping it broad is safer for "missing" models complaint
+            models = sorted([
+                m.id for m in response.data 
+                if ("gpt" in m.id or "o1-" in m.id or "o3-" in m.id) 
+                and "audio" not in m.id 
+                and "tts" not in m.id 
+                and "realtime" not in m.id
+            ])
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch OpenAI models: {str(e)}")
+
+    elif provider == "anthropic":
+        if not key_to_use:
+             key_to_use = settings.anthropic_api_key
+             
+        if not key_to_use:
+             raise HTTPException(status_code=400, detail="Anthropic API key not configured")
+             
+        # Anthropic doesn't have a public models list endpoint easily accessible in all versions yet, 
+        # but we can try to return common ones or see if library supports it.
+        # As of recent versions, it's not a standard list call like OpenAI.
+        # We will return a curated list of known valid models.
+        models = [
+            "claude-3-5-sonnet-20240620",
+            "claude-3-opus-20240229",
+            "claude-3-sonnet-20240229",
+            "claude-3-haiku-20240307",
+            "claude-3-5-haiku-20241022",
+        ]
+
+    elif provider == "gemini":
+        if not key_to_use:
+            key_to_use = settings.gemini_api_key
+            
+        if not key_to_use:
+            raise HTTPException(status_code=400, detail="Gemini API key not configured")
+            
+        try:
+            from google import genai
+            client = genai.Client(api_key=key_to_use)
+            response = client.models.list()
+            models = []
+            for m in response:
+                name_lower = m.name.lower()
+                # Include gemini, gemma, learnlm, and potential future names
+                # Removing the supported_generation_methods check as it might be missing or 'unknown' for preview models
+                if any(x in name_lower for x in ["gemini", "gemma", "learnlm", "paalm", "text-bison", "chat-bison"]):
+                     # Remove 'models/' prefix
+                     model_id = m.name.replace("models/", "")
+                     models.append(model_id)
+            models = sorted(models)
+        except Exception as e:
+             print(f"Gemini fetch error: {e}")
+             raise HTTPException(status_code=500, detail=f"Failed to fetch Gemini models: {str(e)}")
+
+    elif provider == "ollama":
+        url_to_use = base_url if base_url else settings.ollama_base_url
+        if not url_to_use:
+             url_to_use = "http://localhost:11434"
+             
+        try:
+            import requests
+            # Remove trailing slash
+            url_to_use = url_to_use.rstrip("/")
+            resp = requests.get(f"{url_to_use}/api/tags", timeout=5)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                # Debug print
+                print(f"Ollama response: {data}")
+                # Some versions might return just a list of strings? No, officially it's a list of objects.
+                # But let's be safe.
+                raw_models = data.get("models", [])
+                models = []
+                for m in raw_models:
+                    if isinstance(m, dict):
+                        models.append(m.get("name"))
+                    elif isinstance(m, str):
+                        models.append(m)
+                models = sorted(models)
+            else:
+                 raise HTTPException(status_code=500, detail=f"Ollama returned {resp.status_code}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch Ollama models: {str(e)}")
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+    return {"models": models}
