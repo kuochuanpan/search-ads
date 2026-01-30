@@ -17,16 +17,31 @@ class Settings(BaseSettings):
     )
 
     # General
-    version: str = Field(default="0.6.0-beta", alias="VERSION")
+    version: str = Field(default="0.7.0-beta", alias="VERSION")
 
     # API Keys
     ads_api_key: str = Field(default="", alias="ADS_API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+
+    # Providers
+    llm_provider: Literal["openai", "anthropic", "gemini", "ollama"] = Field(default="openai", alias="LLM_PROVIDER")
+    embedding_provider: Literal["openai", "gemini", "ollama"] = Field(default="openai", alias="EMBEDDING_PROVIDER")
 
     # LLM Models
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     anthropic_model: str = Field(default="claude-3-haiku-20240307", alias="ANTHROPIC_MODEL")
+    gemini_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_MODEL")
+    ollama_model: str = Field(default="llama3", alias="OLLAMA_MODEL")
+    
+    # Embedding Models
+    # OpenAI default handled in code (text-embedding-3-small)
+    # Gemini default handled in code (models/embedding-001)
+    ollama_embedding_model: str = Field(default="nomic-embed-text", alias="OLLAMA_EMBEDDING_MODEL")
+
+    # Ollama Settings
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 
     # Data directories
     data_dir: Path = Field(default=Path.home() / ".search-ads")
@@ -196,14 +211,30 @@ class Settings(BaseSettings):
         env_path.write_text(content)
         return True
 
-    def save_models(self, openai_model: str, anthropic_model: str) -> bool:
-        """Save LLM model selection to the .env file."""
+    def save_models(
+        self, 
+        llm_provider: str,
+        embedding_provider: str,
+        openai_model: str, 
+        anthropic_model: str,
+        gemini_model: str,
+        ollama_model: str,
+        ollama_embedding_model: str,
+        ollama_base_url: str,
+    ) -> bool:
+        """Save LLM model/provider selection to the .env file."""
         import re
         env_path = self.data_dir / ".env"
 
         # Update the in-memory setting
+        self.llm_provider = llm_provider
+        self.embedding_provider = embedding_provider
         self.openai_model = openai_model
         self.anthropic_model = anthropic_model
+        self.gemini_model = gemini_model
+        self.ollama_model = ollama_model
+        self.ollama_embedding_model = ollama_embedding_model
+        self.ollama_base_url = ollama_base_url
 
         # Read existing .env file
         if env_path.exists():
@@ -229,13 +260,25 @@ class Settings(BaseSettings):
                 content += f'{new_line}\n'
             return content
 
+        content = update_env_var("LLM_PROVIDER", llm_provider, content)
+        content = update_env_var("EMBEDDING_PROVIDER", embedding_provider, content)
         content = update_env_var("OPENAI_MODEL", openai_model, content)
         content = update_env_var("ANTHROPIC_MODEL", anthropic_model, content)
+        content = update_env_var("GEMINI_MODEL", gemini_model, content)
+        content = update_env_var("OLLAMA_MODEL", ollama_model, content)
+        content = update_env_var("OLLAMA_EMBEDDING_MODEL", ollama_embedding_model, content)
+        content = update_env_var("OLLAMA_BASE_URL", ollama_base_url, content)
 
         env_path.write_text(content)
         return True
 
-    def save_api_keys(self, ads_key: str | None = None, openai_key: str | None = None, anthropic_key: str | None = None) -> bool:
+    def save_api_keys(
+        self, 
+        ads_key: str | None = None, 
+        openai_key: str | None = None, 
+        anthropic_key: str | None = None,
+        gemini_key: str | None = None
+    ) -> bool:
         """Save API keys to the .env file.
         
         Only updates keys that are provided (not None).
@@ -250,6 +293,8 @@ class Settings(BaseSettings):
             self.openai_api_key = openai_key
         if anthropic_key is not None:
             self.anthropic_api_key = anthropic_key
+        if gemini_key is not None:
+            self.gemini_api_key = gemini_key
 
         # Read existing .env file
         if env_path.exists():
@@ -281,6 +326,8 @@ class Settings(BaseSettings):
             content = update_env_var("OPENAI_API_KEY", openai_key, content)
         if anthropic_key is not None:
             content = update_env_var("ANTHROPIC_API_KEY", anthropic_key, content)
+        if gemini_key is not None:
+            content = update_env_var("GEMINI_API_KEY", gemini_key, content)
 
         env_path.write_text(content)
         return True

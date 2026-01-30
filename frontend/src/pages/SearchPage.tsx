@@ -10,7 +10,7 @@ import { useAISearch } from '@/hooks/useSearch'
 import { useProjects, useAddPapersToProject } from '@/hooks/useProjects'
 import { api, SearchResultItem } from '@/lib/api'
 
-type CopiedType = 'bibtex' | 'aastex' | null
+type CopiedType = 'bibtex' | 'aastex' | 'bibcode' | null
 
 type SearchMode = 'natural' | 'keywords' | 'similar'
 type SearchScope = 'library' | 'ads' | 'pdf'
@@ -239,6 +239,16 @@ export function SearchPage() {
       setTimeout(() => setCopiedState(null), 2000)
     } catch (error) {
       console.error('Failed to copy AASTeX:', error)
+    }
+  }
+
+  const copyBibcode = async (paper: SearchResultItem) => {
+    try {
+      await navigator.clipboard.writeText(paper.bibcode)
+      setCopiedState({ bibcode: paper.bibcode, type: 'bibcode' })
+      setTimeout(() => setCopiedState(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy Bibcode:', error)
     }
   }
 
@@ -569,10 +579,18 @@ export function SearchPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.open(`https://ui.adsabs.harvard.edu/abs/${paper.bibcode}/abstract`, '_blank')}
+                        onClick={() => api.openUrl(`https://ui.adsabs.harvard.edu/abs/${paper.bibcode}/abstract`)}
                       >
                         <Icon icon={ExternalLink} size={14} />
                         ADS
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyBibcode(paper)}
+                      >
+                        <Icon icon={copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibcode' ? Check : Copy} size={14} />
+                        {copiedState?.bibcode === paper.bibcode && copiedState?.type === 'bibcode' ? 'Copied!' : 'Bibcode'}
                       </Button>
                       <Button
                         variant="ghost"

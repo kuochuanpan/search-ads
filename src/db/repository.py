@@ -733,7 +733,9 @@ class NoteRepository:
                 # Also index note separately if needed (legacy or specific note search)
                 self.vector_store.embed_note(result)
             except Exception as e:
+                import traceback
                 print(f"Warning: Failed to embed note/paper for {bibcode}: {e}")
+                print(traceback.format_exc())
 
         return result
 

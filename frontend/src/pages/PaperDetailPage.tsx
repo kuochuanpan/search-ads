@@ -326,9 +326,10 @@ export function PaperDetailPage() {
 
           <Button
             variant="outline"
-            as="a"
-            href={`https://ui.adsabs.harvard.edu/abs/${bibcode}/abstract`}
-            target="_blank"
+            onClick={(e) => {
+              e.preventDefault();
+              api.openUrl(`https://ui.adsabs.harvard.edu/abs/${bibcode}/abstract`);
+            }}
           >
             <Icon icon={ExternalLink} size={16} />
             ADS
@@ -337,9 +338,10 @@ export function PaperDetailPage() {
           {paper.arxiv_id && (
             <Button
               variant="outline"
-              as="a"
-              href={`https://arxiv.org/abs/${paper.arxiv_id}`}
-              target="_blank"
+              onClick={(e) => {
+                e.preventDefault();
+                api.openUrl(`https://arxiv.org/abs/${paper.arxiv_id}`);
+              }}
             >
               <Icon icon={ExternalLink} size={16} />
               arXiv

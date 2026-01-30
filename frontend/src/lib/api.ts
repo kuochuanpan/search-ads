@@ -7,7 +7,7 @@ console.log('[API] Running in Tauri:', isTauri);
 const API_BASE = '/api'
 
 // Tauri invoke function - dynamically imported
-let tauriApi: { invoke: any, listen: any } | null = null;
+let tauriApi: { invoke: any, listen: any, open: any } | null = null;
 
 async function getTauri() {
   if (!isTauri) return null;
@@ -15,7 +15,8 @@ async function getTauri() {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const { listen } = await import('@tauri-apps/api/event');
-    tauriApi = { invoke, listen };
+    const { open } = await import('@tauri-apps/plugin-shell');
+    tauriApi = { invoke, listen, open };
     console.log('[API] Tauri interactors loaded');
     return tauriApi;
   } catch (e) {
@@ -95,9 +96,12 @@ export interface ApiUsageResponse {
 }
 
 export interface SettingsResponse {
+  version: string
   data_dir: string
   db_path: string
   pdfs_path: string
+  llm_provider: string
+  embedding_provider: string
   max_hops: number
   top_k: number
   min_citation_count: number
@@ -107,8 +111,13 @@ export interface SettingsResponse {
   has_ads_key: boolean
   has_openai_key: boolean
   has_anthropic_key: boolean
+  has_gemini_key: boolean
   openai_model: string
   anthropic_model: string
+  gemini_model: string
+  ollama_model: string
+  ollama_embedding_model: string
+  ollama_base_url: string
   my_author_names: string
 }
 
@@ -116,6 +125,7 @@ export interface ApiKeysRequest {
   ads_api_key?: string
   openai_api_key?: string
   anthropic_api_key?: string
+  gemini_api_key?: string
 }
 
 export interface AuthorNamesResponse {
@@ -456,6 +466,24 @@ async function* streamRequest<T>(path: string, options: RequestInit = {}): Async
 }
 
 export const api = {
+  // Utilities
+  getAvailableModels: (provider: string, options?: { api_key?: string, base_url?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.api_key) params.append('api_key', options.api_key);
+    if (options?.base_url) params.append('base_url', options.base_url);
+    const query = params.toString();
+    return request<{ models: string[] }>(`/settings/models/${encodeURIComponent(provider)}${query ? `?${query}` : ''}`);
+  },
+
+  openUrl: async (url: string) => {
+    const tauri = await getTauri();
+    if (tauri) {
+      await tauri.open(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  },
+
   // Papers
   getPapers: (params?: {
     limit?: number
@@ -832,7 +860,7 @@ export const api = {
       notes_count: number
     }>('/settings/vector-stats'),
 
-  testApiKey: (service: 'ads' | 'openai' | 'anthropic') =>
+  testApiKey: (service: 'ads' | 'openai' | 'anthropic' | 'gemini' | 'ollama') =>
     request<{ valid: boolean; message: string }>(`/settings/test-api-key/${service}`, {
       method: 'POST',
     }),
@@ -851,10 +879,19 @@ export const api = {
       body: JSON.stringify(keys),
     }),
 
-  updateModels: (openai_model: string, anthropic_model: string) =>
+  updateModels: (params: {
+    llm_provider: string
+    embedding_provider: string
+    openai_model: string
+    anthropic_model: string
+    gemini_model: string
+    ollama_model: string
+    ollama_embedding_model: string
+    ollama_base_url: string
+  }) =>
     request<{ message: string; success: boolean }>('/settings/models', {
       method: 'PUT',
-      body: JSON.stringify({ openai_model, anthropic_model }),
+      body: JSON.stringify(params),
     }),
 
   clearAllData: () =>

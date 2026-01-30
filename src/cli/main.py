@@ -47,16 +47,42 @@ ENV_TEMPLATE = """# Search-ADS Configuration
 # Get your ADS API key from: https://ui.adsabs.harvard.edu/user/settings/token
 ADS_API_KEY=
 
-# OpenAI API key for embeddings and LLM features (optional)
+# ------------------------------------------------------------------------------
+# Provider Selection
+# ------------------------------------------------------------------------------
+# LLM Provider for chat/ranking: openai, anthropic, gemini, ollama
+LLM_PROVIDER="openai"
+
+# Embedding Provider for vector search: openai, gemini, ollama
+# Note: Changing this requires re-indexing (search-ads db clear && search-ads db embed)
+EMBEDDING_PROVIDER="openai"
+
+# ------------------------------------------------------------------------------
+# API Keys & Models
+# ------------------------------------------------------------------------------
+# OpenAI
 # Get your key from: https://platform.openai.com/api-keys
 OPENAI_API_KEY=
 OPENAI_MODEL="gpt-4o-mini"
 
-# Anthropic API key for Claude LLM features (optional)
+# Anthropic
 # Get your key from: https://console.anthropic.com/
 #ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL="claude-3-haiku-20240307"
 
+# Gemini (Google)
+# Get your key from: https://aistudio.google.com/app/apikey
+#GEMINI_API_KEY=
+GEMINI_MODEL="gemini-1.5-flash"
+
+# Ollama (Local)
+#OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="llama3"
+OLLAMA_EMBEDDING_MODEL="nomic-embed-text"
+
+# ------------------------------------------------------------------------------
+# Other Settings
+# ------------------------------------------------------------------------------
 # Author name(s) for auto-detecting "my papers" (semicolon-separated, optional)
 # Example: MY_AUTHOR_NAMES="Pan, K.-C.; Pan, Kuo-Chuan; Pan, K."
 #MY_AUTHOR_NAMES=
@@ -95,6 +121,106 @@ def init(
     console.print("  3. Optionally add OpenAI key for semantic search")
     console.print("\n[dim]Then run: search-ads seed <paper-url> to add your first paper[/dim]")
 
+
+@app.command()
+def config(
+    llm_provider: Optional[str] = typer.Option(None, "--llm-provider", help="Set LLM provider (openai, anthropic, gemini, ollama)"),
+    embedding_provider: Optional[str] = typer.Option(None, "--embedding-provider", help="Set embedding provider (openai, gemini, ollama)"),
+    openai_key: Optional[str] = typer.Option(None, "--openai-key", help="Set OpenAI API key"),
+    anthropic_key: Optional[str] = typer.Option(None, "--anthropic-key", help="Set Anthropic API key"),
+    gemini_key: Optional[str] = typer.Option(None, "--gemini-key", help="Set Gemini API key"),
+    ads_key: Optional[str] = typer.Option(None, "--ads-key", help="Set ADS API key"),
+    ollama_url: Optional[str] = typer.Option(None, "--ollama-url", help="Set Ollama base URL"),
+):
+    """View or update configuration."""
+    ensure_data_dirs()
+    
+    # Handle updates
+    changes_made = False
+    
+    if llm_provider:
+        if llm_provider not in ["openai", "anthropic", "gemini", "ollama"]:
+            console.print(f"[red]Invalid LLM provider: {llm_provider}[/red]")
+            raise typer.Exit(1)
+        settings.save_models(
+            llm_provider=llm_provider,
+            embedding_provider=settings.embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=settings.ollama_base_url
+        )
+        console.print(f"[green]Set LLM provider to: {llm_provider}[/green]")
+        changes_made = True
+
+    if embedding_provider:
+        if embedding_provider not in ["openai", "gemini", "ollama"]:
+            console.print(f"[red]Invalid embedding provider: {embedding_provider}[/red]")
+            raise typer.Exit(1)
+            
+        settings.save_models(
+            llm_provider=settings.llm_provider,
+            embedding_provider=embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=settings.ollama_base_url
+        )
+        console.print(f"[green]Set embedding provider to: {embedding_provider}[/green]")
+        console.print("[yellow]Note: Changing embedding provider requires re-indexing.[/yellow]")
+        console.print("[dim]Run 'search-ads db embed --force' to rebuild embeddings.[/dim]")
+        changes_made = True
+
+    if ollama_url:
+        settings.save_models(
+            llm_provider=settings.llm_provider,
+            embedding_provider=settings.embedding_provider,
+            openai_model=settings.openai_model,
+            anthropic_model=settings.anthropic_model,
+            gemini_model=settings.gemini_model,
+            ollama_model=settings.ollama_model,
+            ollama_embedding_model=settings.ollama_embedding_model,
+            ollama_base_url=ollama_url
+        )
+        console.print(f"[green]Set Ollama URL to: {ollama_url}[/green]")
+        changes_made = True
+
+    if any([openai_key, anthropic_key, gemini_key, ads_key]):
+        settings.save_api_keys(
+            ads_key=ads_key,
+            openai_key=openai_key,
+            anthropic_key=anthropic_key,
+            gemini_key=gemini_key
+        )
+        console.print("[green]Updated API keys[/green]")
+        changes_made = True
+
+    if changes_made:
+        console.print()
+
+    # Show current config
+    table = Table(title="Current Configuration")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    
+    table.add_row("LLM Provider", settings.llm_provider)
+    table.add_row("Embedding Provider", settings.embedding_provider)
+    
+    # helper for masking
+    def mask(key):
+        return "configured" if key else "Not set"
+
+    table.add_row("ADS Key", mask(settings.ads_api_key))
+    table.add_row("OpenAI Key", mask(settings.openai_api_key))
+    table.add_row("Anthropic Key", mask(settings.anthropic_api_key))
+    table.add_row("Gemini Key", mask(settings.gemini_api_key))
+    table.add_row("Ollama URL", settings.ollama_base_url)
+    
+    console.print(table)
 
 def _display_paper(paper: Paper, show_abstract: bool = True):
     """Display a paper in a nice format."""
@@ -282,11 +408,29 @@ def _display_ranked_paper(ranked: RankedPaper, index: int):
     console.print()
 
 
+def _is_nonsensical_query(analysis, context: str) -> bool:
+    """Check if the LLM analysis indicates a nonsensical/unknown query.
+
+    Returns True if the analysis topic is unknown/none/empty or
+    the search query is empty, suggesting the context is not
+    meaningful scientific text (e.g., a personal note marker).
+    """
+    if not analysis:
+        return False
+    topic = (analysis.topic or "").strip().lower()
+    search_query = (analysis.search_query or "").strip()
+    if topic in ("unknown", "none", "") or not search_query:
+        return True
+    return False
+
+
 def _search_local_database(
     query: str,
     keywords: list[str],
     limit: int = 50,
     use_vector: bool = True,
+    original_context: str = "",
+    prioritize_note_text: bool = False,
 ) -> list[Paper]:
     """Search the local database using vector similarity or keywords.
 
@@ -297,6 +441,8 @@ def _search_local_database(
         keywords: Keywords for fallback text search
         limit: Maximum results to return
         use_vector: Whether to use vector search (falls back to text if unavailable)
+        original_context: The raw user context string (used for note text search)
+        prioritize_note_text: If True, search notes by exact text first before vector search
 
     Returns:
         List of matching papers
@@ -308,6 +454,19 @@ def _search_local_database(
 
     seen_bibcodes = set()
     papers = []
+
+    # If prioritizing note text search (nonsensical query), try exact text match first
+    if prioritize_note_text and original_context:
+        console.print("[dim]Prioritizing note text search for marker query[/dim]")
+        note_matches = note_repo.search_by_text(original_context, limit=limit)
+        for note_match in note_matches:
+            if note_match.bibcode not in seen_bibcodes:
+                paper = paper_repo.get(note_match.bibcode)
+                if paper:
+                    papers.append(paper)
+                    seen_bibcodes.add(note_match.bibcode)
+        if papers:
+            return papers[:limit]
 
     # Try vector search first
     if use_vector:
@@ -324,6 +483,8 @@ def _search_local_database(
                     status_parts.append(f"{notes_count} notes")
                 console.print(f"[dim]Using vector search ({', '.join(status_parts)} embedded)[/dim]")
 
+                got_abstract_results = False
+
                 # Search abstracts
                 if vector_count > 0:
                     results = vector_store.search(query, n_results=limit)
@@ -334,6 +495,8 @@ def _search_local_database(
                             if paper:
                                 papers.append(paper)
                                 seen_bibcodes.add(bibcode)
+                    if results:
+                        got_abstract_results = True
 
                 # Search notes
                 if notes_count > 0:
@@ -346,10 +509,11 @@ def _search_local_database(
                                 papers.append(paper)
                                 seen_bibcodes.add(bibcode)
 
-                if papers:
+                if papers and got_abstract_results:
                     return papers[:limit]
 
-                console.print("[yellow]No vector results, falling back to text search[/yellow]")
+                if not got_abstract_results:
+                    console.print("[yellow]Abstract vector search returned no results, supplementing with text search[/yellow]")
         except Exception as e:
             console.print(f"[yellow]Vector search unavailable: {e}[/yellow]")
             console.print("[yellow]Falling back to text search[/yellow]")
@@ -450,8 +614,8 @@ def find(
                 console.print("[yellow]Using basic keyword extraction...[/yellow]\n")
 
         # Step 2: Search for papers
-        search_keywords = analysis.keywords if analysis else context.split()[:5]
-        search_query = analysis.search_query if analysis else context
+        search_keywords = analysis.keywords if (analysis and analysis.keywords) else context.split()[:5]
+        search_query = analysis.search_query if (analysis and analysis.search_query) else context
 
         if local_only:
             # Search local database only
@@ -459,11 +623,15 @@ def find(
             db_count = paper_repo.count()
             console.print(f"[dim]Database has {db_count} papers[/dim]")
 
+            nonsensical = _is_nonsensical_query(analysis, context)
+
             papers = _search_local_database(
                 query=search_query,
                 keywords=search_keywords,
                 limit=top_k * 10,  # Get more to filter
                 use_vector=True,
+                original_context=context,
+                prioritize_note_text=nonsensical,
             )
 
             # Apply author and year filters to local results
@@ -510,6 +678,27 @@ def find(
                 return
 
         # Step 3: Rank papers with LLM (if available)
+        # Skip LLM ranking for nonsensical/marker queries — the LLM generates
+        # fabricated relevance explanations when the context is a personal note
+        # marker rather than scientific text.
+        if not no_llm and analysis and _is_nonsensical_query(analysis, context) and papers:
+            console.print("[dim]Skipping LLM ranking for note-marker query[/dim]\n")
+            note_repo = NoteRepository(auto_embed=False)
+            display_count = max(top_k, num_refs)
+            console.print(f"[green]Found {min(len(papers), display_count)} papers (matched via notes):[/green]\n")
+            for i, paper in enumerate(papers[:display_count], 1):
+                # Build explanation from note content
+                user_note = note_repo.get(paper.bibcode)
+                explanation = f"Matched note: {user_note.content[:200]}" if user_note else "Matched via note search"
+                ranked = RankedPaper(
+                    paper=paper,
+                    relevance_score=1.0,
+                    relevance_explanation=explanation,
+                    citation_type=CitationType.GENERAL,
+                )
+                _display_ranked_paper(ranked, i)
+            return
+
         if not no_llm and analysis:
             try:
                 llm_client = LLMClient()
@@ -1131,7 +1320,7 @@ def db_embed(
     current_count = vector_store.count()
     console.print(f"[dim]Currently {current_count} papers embedded[/dim]")
 
-    if force and current_count > 0:
+    if force:
         console.print("[yellow]Clearing existing embeddings...[/yellow]")
         vector_store.clear()
 
