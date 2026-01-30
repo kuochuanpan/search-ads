@@ -27,12 +27,27 @@ from src.db.repository import (
     get_db,
 )
 
+def _version_callback(value: bool):
+    if value:
+        typer.echo(f"search-ads {settings.version}")
+        raise typer.Exit()
+
+
 # Create Typer app
 app = typer.Typer(
     name="search-ads",
     help="CLI tool for automating scientific paper citations using NASA ADS",
     add_completion=False,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    version: bool = typer.Option(
+        False, "--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True
+    ),
+):
+    """CLI tool for automating scientific paper citations using NASA ADS."""
 
 # Sub-apps
 pdf_app = typer.Typer(help="PDF management commands")
@@ -548,7 +563,7 @@ def _search_local_database(
 
 @app.command()
 def find(
-    context: str = typer.Option(..., "--context", "-c", help="Text context for the citation"),
+    context: Optional[str] = typer.Option(None, "--context", "-c", help="Text context for the citation"),
     author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author name"),
     year: Optional[str] = typer.Option(None, "--year", "-y", help="Filter by year (e.g., 2020, 2018-2022)"),
     max_hops: int = typer.Option(2, "--max-hops", help="Maximum hops for graph expansion"),
@@ -563,7 +578,13 @@ def find(
     Use --num-refs to specify how many references are needed (e.g., 2 for \\cite{,}).
     Use --author to filter by author name (e.g., --author "Pan").
     Use --year to filter by year (e.g., --year 2020 or --year 2018-2022).
+
+    When using --author or --year, --context is optional.
     """
+    if not context and not author and not year:
+        console.print("[red]Error: --context is required unless --author or --year is provided[/red]")
+        raise typer.Exit(1)
+
     ensure_data_dirs()
 
     ads_client = ADSClient()
@@ -578,8 +599,9 @@ def find(
         else:
             year_range = (int(year), int(year))
 
-    console.print(f"[blue]Searching for papers matching context...[/blue]")
-    console.print(f"[dim]Context: {context[:100]}{'...' if len(context) > 100 else ''}[/dim]")
+    console.print(f"[blue]Searching for papers...[/blue]")
+    if context:
+        console.print(f"[dim]Context: {context[:100]}{'...' if len(context) > 100 else ''}[/dim]")
     if author:
         console.print(f"[dim]Author filter: {author}[/dim]")
     if year_range:
@@ -596,7 +618,7 @@ def find(
         analysis = None
 
         # Try LLM-powered analysis if available and not disabled
-        if not no_llm:
+        if context and not no_llm:
             try:
                 llm_client = LLMClient()
 
@@ -614,8 +636,8 @@ def find(
                 console.print("[yellow]Using basic keyword extraction...[/yellow]\n")
 
         # Step 2: Search for papers
-        search_keywords = analysis.keywords if (analysis and analysis.keywords) else context.split()[:5]
-        search_query = analysis.search_query if (analysis and analysis.search_query) else context
+        search_keywords = analysis.keywords if (analysis and analysis.keywords) else (context.split()[:5] if context else [])
+        search_query = analysis.search_query if (analysis and analysis.search_query) else (context or "")
 
         if local_only:
             # Search local database only
@@ -623,22 +645,30 @@ def find(
             db_count = paper_repo.count()
             console.print(f"[dim]Database has {db_count} papers[/dim]")
 
-            nonsensical = _is_nonsensical_query(analysis, context)
+            if context:
+                nonsensical = _is_nonsensical_query(analysis, context)
 
-            papers = _search_local_database(
-                query=search_query,
-                keywords=search_keywords,
-                limit=top_k * 10,  # Get more to filter
-                use_vector=True,
-                original_context=context,
-                prioritize_note_text=nonsensical,
-            )
+                papers = _search_local_database(
+                    query=search_query,
+                    keywords=search_keywords,
+                    limit=top_k * 10,  # Get more to filter
+                    use_vector=True,
+                    original_context=context,
+                    prioritize_note_text=nonsensical,
+                )
+            elif author:
+                # Search by author directly
+                papers = paper_repo.search_by_author(author, limit=top_k * 10)
+            else:
+                # No context or author — fetch all papers for filtering by year
+                papers = paper_repo.get_all(limit=top_k * 10)
 
-            # Apply author and year filters to local results
+            # Apply additional filters (author already handled if used above, but harmless to re-check)
+            # Year filter is the main one left
             if papers and (author or year_range):
                 filtered = []
                 for p in papers:
-                    # Author filter
+                    # Author filter (double check or if mixed with context search)
                     if author:
                         if not p.authors or author.lower() not in p.authors.lower():
                             continue
@@ -650,7 +680,11 @@ def find(
                 papers = filtered[:top_k * 3]  # Limit after filtering
 
             if not papers:
-                console.print("[yellow]No papers found in local database[/yellow]")
+                if author:
+                     console.print(f"[yellow]No papers found for author '{author}' in local database[/yellow]")
+                else:
+                     console.print("[yellow]No papers found in local database[/yellow]")
+                
                 console.print("[dim]Try running without --local to search ADS, or seed more papers[/dim]")
                 console.print("[dim]Or run 'search-ads db embed' to embed existing papers for vector search[/dim]")
                 return
@@ -659,9 +693,14 @@ def find(
             console.print("[blue]Searching ADS...[/blue]")
 
             # Build query with author filter
-            ads_query = search_query
-            if author:
-                ads_query = f"({ads_query}) AND author:\"{author}\""
+            if search_query:
+                ads_query = search_query
+                if author:
+                    ads_query = f"({ads_query}) AND author:\"{author}\""
+            elif author:
+                ads_query = f"author:\"{author}\""
+            else:
+                ads_query = "*:*"
 
             papers = ads_client.search(ads_query, limit=top_k * 3, year_range=year_range)
 
@@ -681,7 +720,7 @@ def find(
         # Skip LLM ranking for nonsensical/marker queries — the LLM generates
         # fabricated relevance explanations when the context is a personal note
         # marker rather than scientific text.
-        if not no_llm and analysis and _is_nonsensical_query(analysis, context) and papers:
+        if not no_llm and analysis and context and _is_nonsensical_query(analysis, context) and papers:
             console.print("[dim]Skipping LLM ranking for note-marker query[/dim]\n")
             note_repo = NoteRepository(auto_embed=False)
             display_count = max(top_k, num_refs)
@@ -699,7 +738,7 @@ def find(
                 _display_ranked_paper(ranked, i)
             return
 
-        if not no_llm and analysis:
+        if not no_llm and analysis and context:
             try:
                 llm_client = LLMClient()
                 console.print(f"[blue]Ranking {len(papers)} papers by relevance...[/blue]\n")
@@ -1613,6 +1652,15 @@ def pdf_search(
     if vector_store.pdf_count() == 0:
         console.print("[yellow]No PDFs embedded yet[/yellow]")
         console.print("[dim]Use 'search-ads pdf embed <bibcode>' to embed PDFs[/dim]")
+        return
+
+    if bibcode and not vector_store.is_pdf_embedded(bibcode):
+        console.print(
+            f"[yellow]Warning: PDF for {bibcode} is not embedded.[/yellow]"
+        )
+        console.print(
+            f"[dim]Run 'search-ads pdf download {bibcode}' then 'search-ads pdf embed {bibcode}' first.[/dim]\n"
+        )
         return
 
     console.print(f"[blue]Searching PDF content for: {query}[/blue]\n")

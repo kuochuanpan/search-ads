@@ -51,7 +51,7 @@ src-tauri/target/
 *.pdb
 
 # Editor / Tool specific
-.claude/
+.claude/settings.local.json
 *.bak
 
 # Frontend

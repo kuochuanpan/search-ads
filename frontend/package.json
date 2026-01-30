@@ -1,6 +1,6 @@
 {
   "name": "search-ads-webui",
-  "version": "0.7.0-beta",
+  "version": "0.8.0-beta",
   "type": "module",
   "scripts": {
     "dev": "vite",

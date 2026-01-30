@@ -277,6 +277,25 @@ class PaperRepository:
             stmt = select(Paper).where(Paper.title.ilike(f"%{query}%")).limit(limit)
             return list(session.exec(stmt).all())
 
+    def search_by_author(self, author: str, limit: int = 50) -> list[Paper]:
+        """Search papers by author name.
+        
+        Args:
+            author: Author name to search for (partial match)
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching papers, sorted by year descending
+        """
+        with self.db.get_session() as session:
+            stmt = (
+                select(Paper)
+                .where(Paper.authors.ilike(f"%{author}%"))
+                .order_by(Paper.year.desc())
+                .limit(limit)
+            )
+            return list(session.exec(stmt).all())
+
     def search_by_text(self, query: str, limit: int = 20) -> list[Paper]:
         """Search papers by title and abstract (simple LIKE query).
 

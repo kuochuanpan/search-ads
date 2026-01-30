@@ -70,10 +70,12 @@ search-ads find -c "stellar evolution" --author "Pan"
 search-ads find -c "black holes" --year 2020
 search-ads find -c "cosmology" --year 2018-2022
 search-ads find -c "text with \\cite{,}" --num-refs 2  # Multiple refs needed
+search-ads find --author "Pan"                      # Search by author only
+search-ads find --author "Pan" --year 2020-2024     # Author + year, no context
 ```
 
 **Options:**
-- `--context / -c` (required) - Text context for the citation
+- `--context / -c` - Text context for the citation (required unless `--author` or `--year` is provided)
 - `--author / -a` - Filter by author name
 - `--year / -y` - Filter by year (single: `2020`, range: `2018-2022`)
 - `--max-hops` (default: 2) - Maximum hops for graph expansion

@@ -127,10 +127,18 @@ search-ads pdf embed <bibcode>
 
 # Search through embedded PDFs
 search-ads pdf search "query text"
+search-ads pdf search "query" --bibcode <bibcode>
 
 # Show PDF status
 search-ads pdf status
 ```
+
+**Important:** Before searching a specific paper's PDF with `--bibcode`, you must first download and embed it:
+1. `search-ads pdf download <bibcode>`
+2. `search-ads pdf embed <bibcode>`
+3. Then `search-ads pdf search "query" --bibcode <bibcode>`
+
+If you skip the embed step, the search will warn that the PDF is not embedded and return no results.
 
 ## Project Management
 
