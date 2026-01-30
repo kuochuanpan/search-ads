@@ -261,11 +261,19 @@ class VectorStore:
             f"Title: {paper.title}",
             f"Authors: {authors_str}" if authors_str else "",
             f"My Paper: {'Yes' if paper.is_my_paper else 'No'}",
-            f"Abstract: {paper.abstract}" if paper.abstract else "",
+            f"Abstract: {paper.abstract[:2500] + '... (truncated)' if paper.abstract and len(paper.abstract) > 2500 else (paper.abstract or '')}",
             f"Notes: {note_content}" if note_content else ""
         ]
         
         doc_text = "\n\n".join([p for p in parts if p])
+        
+        # Check total length and truncate if needed (especially for Ollama)
+        # Author lists can be massive (e.g. LIGO papers), so we truncate the author part
+        # in the source string if it's too long, to avoid context limit errors.
+        if len(authors_str) > 500:
+             authors_truncated = authors_str[:500] + "... (+ many more)"
+             parts[1] = f"Authors: {authors_truncated}"
+             doc_text = "\n\n".join([p for p in parts if p])
 
         # Prepare metadata
         # Truncate string fields to satisfy Chroma limits
@@ -330,7 +338,15 @@ class VectorStore:
             batch = papers_to_embed[i : i + batch_size]
 
             ids = [p.bibcode for p in batch]
-            documents = [f"{p.title}\n\n{p.abstract}" for p in batch]
+            # Truncate abstract if too long to avoid context limit errors (especially for Ollama)
+            # 5000 chars is roughly 1000-1500 tokens, which should be safe for most models
+            # but let's be conservative with 2500 chars for the combo of title + abstract
+            documents = []
+            for p in batch:
+                abstract = p.abstract or ""
+                if len(abstract) > 2500:
+                    abstract = abstract[:2500] + "... (truncated)"
+                documents.append(f"{p.title}\n\n{abstract}")
             metadatas = [
                 {
                     "bibcode": p.bibcode,
@@ -348,6 +364,7 @@ class VectorStore:
                     documents=documents,
                     metadatas=metadatas,
                 )
+                embedded += len(batch)
             except Exception as e:
                 if "dimension" in str(e).lower() and "expecting" in str(e).lower():
                     print("Dimension mismatch detected. Clearing abstracts collection to rebuild with current provider.")
@@ -360,10 +377,20 @@ class VectorStore:
                         documents=documents,
                         metadatas=metadatas,
                     )
+                    embedded += len(batch)
                 else:
-                    raise e
-
-            embedded += len(batch)
+                    # Batch failed — fall back to embedding one paper at a time
+                    # so a single bad paper doesn't block the rest.
+                    for j, paper in enumerate(batch):
+                        try:
+                            self.abstracts_collection.add(
+                                ids=[ids[j]],
+                                documents=[documents[j]],
+                                metadatas=[metadatas[j]],
+                            )
+                            embedded += 1
+                        except Exception as inner_e:
+                            print(f"Skipping {paper.bibcode}: {inner_e}")
 
         return embedded
 
