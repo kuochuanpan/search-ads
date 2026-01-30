@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.db.repository import PaperRepository
+from src.db.repository import PaperRepository, NoteRepository
 from src.web.dependencies import (
     get_paper_repo,
     get_ads_client,
@@ -15,6 +15,12 @@ from src.web.dependencies import (
     get_vector_store_dep,
 )
 from src.web.schemas.paper import PaperRead
+from src.web.schemas.search import (
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
+    SearchResultItem as UnifiedResultItem,
+    AIAnalysis,
+)
 
 router = APIRouter()
 
@@ -39,6 +45,22 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SemanticSearchResult]
     count: int
+
+
+def _extract_keywords_fallback(query: str) -> List[str]:
+    """Fallback keyword extraction using regex and stopwords."""
+    import re
+    stopwords = {
+        "that", "this", "with", "from", "have", "been", "were", "which",
+        "their", "there", "about", "would", "could", "should", "these",
+        "those", "other", "paper", "papers", "search", "find", "looking",
+        "show", "give", "what", "where", "when", "why", "how"
+    }
+    words = re.findall(r"\b[a-zA-Z]{4,}\b", query.lower())
+    keywords = [w for w in words if w not in stopwords][:5]
+    if keywords:
+        print(f"Using fallback keywords: {keywords}")
+    return keywords
 
 
 @router.post("/local")
@@ -214,19 +236,23 @@ async def search_ads(
         # Simple heuristic: if no common ADS operators/fields and > 3 words, try extraction
         is_structured = any(x in query.lower() for x in ["author:", "year:", "bibcode:", "title:", "abs:", " AND ", " OR "])
         
-        if not is_structured and len(query.split()) > 3 and llm_client:
-            try:
-                # Use strict keyword extraction
-                keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
-                if keywords:
-                    # Construct a new query with keywords
-                    # Using simple space join (implicit AND/OR depending on ADS config, typically defaults to AND in modern search)
-                    # ADS default operator is often AND for simple terms
-                    query = " ".join(keywords)
-                    print(f"Refined natural language query '{request.query}' to: '{query}'")
-            except Exception as e:
-                print(f"Keyword extraction failed: {e}")
-                # Fallback to original query
+        if not is_structured and len(query.split()) > 3:
+            keywords = []
+            if llm_client:
+                try:
+                    # Use strict keyword extraction
+                    keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
+                except Exception as e:
+                    print(f"Keyword extraction failed: {e}")
+            
+            # Fallback if LLM extraction returned nothing or failed (and we have no keywords yet)
+            if not keywords:
+                keywords = _extract_keywords_fallback(query)
+
+            if keywords:
+                # Construct a new query with keywords
+                query = " ".join(keywords)
+                print(f"Refined natural language query '{request.query}' to: '{query}'")
 
         papers = ads_client.search(query, max_results=request.limit)
 
@@ -271,23 +297,34 @@ async def search_ads_stream(
             # Simple heuristic: if no common ADS operators/fields and > 3 words, try extraction
             is_structured = any(x in query.lower() for x in ["author:", "year:", "bibcode:", "title:", "abs:", " AND ", " OR "])
             
-            if not is_structured and len(query.split()) > 3 and llm_client:
-                try:
-                    yield json.dumps({
-                        "type": "progress",
-                        "message": "Analyzing natural language query..."
-                    }) + "\n"
-                    
-                    # Use strict keyword extraction
-                    keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
-                    if keywords:
-                        query = " ".join(keywords)
+            if not is_structured and len(query.split()) > 3:
+                keywords = []
+                if llm_client:
+                    try:
                         yield json.dumps({
                             "type": "progress",
-                            "message": f"Refined query: {query}"
+                            "message": "Analyzing natural language query..."
                         }) + "\n"
-                except Exception as e:
-                    print(f"Keyword extraction failed: {e}")
+                        
+                        # Use strict keyword extraction
+                        keywords = await asyncio.to_thread(llm_client.extract_keywords_only, query)
+                    except Exception as e:
+                        print(f"Keyword extraction failed: {e}")
+                
+                # Fallback
+                if not keywords:
+                     yield json.dumps({
+                        "type": "progress",
+                        "message": "Extracting keywords..."
+                    }) + "\n"
+                     keywords = _extract_keywords_fallback(query)
+
+                if keywords:
+                    query = " ".join(keywords)
+                    yield json.dumps({
+                        "type": "progress",
+                        "message": f"Refined query: {query}"
+                    }) + "\n"
             
             # Use search_stream method which yields results
             # We iterate it. Since it's a synchronous generator, we wrap iteration if needed, 
@@ -340,6 +377,369 @@ async def search_ads_stream(
             }) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+
+def _parse_authors(paper) -> Optional[List[str]]:
+    """Parse authors JSON from a paper model."""
+    if paper.authors:
+        try:
+            return json.loads(paper.authors)
+        except (json.JSONDecodeError, TypeError):
+            return [paper.authors] if isinstance(paper.authors, str) else None
+    return None
+
+
+@router.post("/unified", response_model=UnifiedSearchResponse)
+async def search_unified(
+    request: UnifiedSearchRequest,
+    paper_repo: PaperRepository = Depends(get_paper_repo),
+    ads_client=Depends(get_ads_client),
+    llm_client=Depends(get_llm_client),
+    vector_store=Depends(get_vector_store_dep),
+):
+    """Unified search endpoint supporting all mode/scope combinations.
+
+    Modes: natural (LLM analysis + ranking), keywords (direct search)
+    Scopes: library (abstracts), pdf (abstracts + pdf chunks), ads (NASA ADS API)
+    """
+    results: List[UnifiedResultItem] = []
+    ai_analysis = None
+    query_used = request.query
+    total_available = 0
+
+    # Step 1: For natural language mode, analyze query with LLM
+    if request.mode == "natural":
+        if llm_client:
+            try:
+                context_analysis = await asyncio.to_thread(
+                    llm_client.analyze_context, request.query
+                )
+                ai_analysis = AIAnalysis(
+                    topic=context_analysis.topic,
+                    claim=context_analysis.claim,
+                    citation_type_needed=context_analysis.citation_type.value,
+                    keywords=context_analysis.keywords,
+                    reasoning=context_analysis.reasoning,
+                )
+                # For ADS scope, use the LLM-generated search query
+                if request.scope == "ads" and context_analysis.search_query:
+                    query_used = context_analysis.search_query
+            except Exception as e:
+                print(f"LLM analysis failed: {e}")
+
+        # Fallback for ADS if no refined query yet (LLM failed or missing)
+        if request.scope == "ads" and query_used == request.query:
+            # Check if likely natural language
+            is_structured = any(x in request.query.lower() for x in ["author:", "year:", "bibcode:", "title:", "abs:", " AND ", " OR "])
+            if not is_structured and len(request.query.split()) > 3:
+                keywords = _extract_keywords_fallback(request.query)
+                if keywords:
+                    query_used = " ".join(keywords)
+                    print(f"Unified fallback: Refined query to '{query_used}'")
+
+    # Step 2: Search the selected scope
+    seen_bibcodes = set()
+
+    if request.scope == "library":
+        results, total_available = await _search_library(
+            request, query_used, vector_store, paper_repo, seen_bibcodes
+        )
+
+    elif request.scope == "pdf":
+        results, total_available = await _search_pdf(
+            request, query_used, vector_store, paper_repo, seen_bibcodes
+        )
+
+    elif request.scope == "ads":
+        results, total_available = await _search_ads(
+            request, query_used, ads_client, paper_repo, seen_bibcodes
+        )
+
+    # Step 3: For natural language mode, rank results with LLM
+    if request.mode == "natural" and llm_client and results and ai_analysis:
+        try:
+            from src.db.models import Paper
+            from src.core.llm_client import ContextAnalysis, CitationType
+
+            papers_to_rank = []
+            for r in results[:50]:
+                authors_json = json.dumps(r.authors) if r.authors else None
+                if not authors_json and r.first_author:
+                    authors_json = json.dumps([r.first_author])
+                p = Paper(
+                    bibcode=r.bibcode,
+                    title=r.title,
+                    year=r.year,
+                    abstract=r.abstract,
+                    citation_count=r.citation_count,
+                    authors=authors_json,
+                )
+                papers_to_rank.append(p)
+
+            context = ContextAnalysis(
+                topic=ai_analysis.topic,
+                claim=ai_analysis.claim,
+                citation_type=CitationType(ai_analysis.citation_type_needed.lower()),
+                keywords=ai_analysis.keywords,
+                search_query=request.query,
+                reasoning=ai_analysis.reasoning,
+            )
+
+            ranked = await asyncio.to_thread(
+                llm_client.rank_papers,
+                papers_to_rank,
+                request.query,
+                context_analysis=context,
+                top_k=len(papers_to_rank),
+            )
+
+            rank_map = {rp.paper.bibcode: rp for rp in ranked}
+            for result in results:
+                if result.bibcode in rank_map:
+                    rp = rank_map[result.bibcode]
+                    result.relevance_score = rp.relevance_score
+                    result.relevance_explanation = rp.relevance_explanation
+                    result.citation_type = rp.citation_type.value
+
+            results.sort(key=lambda x: x.relevance_score or 0, reverse=True)
+        except Exception as e:
+            print(f"LLM ranking failed: {e}")
+
+    has_more = total_available > request.offset + len(results)
+
+    return UnifiedSearchResponse(
+        results=results,
+        total_available=total_available,
+        offset=request.offset,
+        limit=request.limit,
+        has_more=has_more,
+        ai_analysis=ai_analysis,
+        query_used=query_used,
+    )
+
+
+async def _search_library(
+    request: UnifiedSearchRequest,
+    query: str,
+    vector_store,
+    paper_repo: PaperRepository,
+    seen_bibcodes: set,
+) -> tuple[List[UnifiedResultItem], int]:
+    """Search local library via ChromaDB abstracts collection."""
+    results = []
+    try:
+        # ChromaDB doesn't support offset, so fetch offset+limit and skip
+        n_results = request.offset + request.limit
+        semantic_results = await asyncio.to_thread(
+            vector_store.search,
+            query,
+            n_results=n_results,
+            min_year=request.min_year,
+            max_year=request.max_year,
+            min_citations=request.min_citations,
+        )
+
+        total_available = len(semantic_results)
+        
+        # Determine if there are more results potentially available in DB
+        # If we got exactly n_results matches, likely there are more
+        if total_available >= n_results:
+             # We don't know exact total, but we know there's at least one more page potentially
+             total_available += 1
+
+        # Skip offset results
+        page_results = semantic_results[request.offset:]
+
+        bibcodes = [r["bibcode"] for r in page_results]
+        papers = paper_repo.get_batch(bibcodes)
+        paper_map = {p.bibcode: p for p in papers}
+
+        for result in page_results:
+            bibcode = result["bibcode"]
+            if bibcode in seen_bibcodes:
+                continue
+            seen_bibcodes.add(bibcode)
+
+            paper = paper_map.get(bibcode)
+            distance = result["distance"] or 1.0
+
+            results.append(UnifiedResultItem(
+                bibcode=bibcode,
+                title=paper.title if paper else result["metadata"].get("title", ""),
+                year=paper.year if paper else result["metadata"].get("year"),
+                first_author=paper.first_author if paper else result["metadata"].get("first_author"),
+                authors=_parse_authors(paper) if paper else None,
+                abstract=paper.abstract[:500] if paper and paper.abstract else None,
+                citation_count=paper.citation_count if paper else result["metadata"].get("citation_count"),
+                journal=paper.journal if paper else None,
+                in_library=True,
+                relevance_score=round(1.0 - min(distance, 1.0), 3),
+                source="library",
+            ))
+
+        return results, total_available
+    except Exception as e:
+        print(f"Library search failed: {e}")
+        return [], 0
+
+
+async def _search_pdf(
+    request: UnifiedSearchRequest,
+    query: str,
+    vector_store,
+    paper_repo: PaperRepository,
+    seen_bibcodes: set,
+) -> tuple[List[UnifiedResultItem], int]:
+    """Search library abstracts + PDF chunks, grouped by bibcode."""
+    results = []
+    bibcode_best: dict = {}  # bibcode -> best distance
+
+    try:
+        # Search abstracts
+        n_results = request.offset + request.limit
+        abstract_results = await asyncio.to_thread(
+            vector_store.search,
+            query,
+            n_results=n_results,
+            min_year=request.min_year,
+            max_year=request.max_year,
+            min_citations=request.min_citations,
+        )
+        for r in abstract_results:
+            bc = r["bibcode"]
+            dist = r["distance"] or 1.0
+            if bc not in bibcode_best or dist < bibcode_best[bc]["distance"]:
+                bibcode_best[bc] = {"distance": dist, "source": "abstract", "metadata": r["metadata"]}
+
+        # Search PDF chunks
+        pdf_results = await asyncio.to_thread(
+            vector_store.search_pdf,
+            query,
+            n_results=n_results * 3,  # More chunks since multiple per paper
+        )
+        for r in pdf_results:
+            bc = r["bibcode"]
+            dist = r["distance"] or 1.0
+            if bc not in bibcode_best or dist < bibcode_best[bc]["distance"]:
+                bibcode_best[bc] = {"distance": dist, "source": "pdf", "metadata": r.get("metadata", {})}
+
+        # Sort by best distance
+        sorted_bibcodes = sorted(bibcode_best.items(), key=lambda x: x[1]["distance"])
+        total_available = len(sorted_bibcodes)
+        
+        # If result count == n_results, likely truncated by vector store limit
+        if total_available >= n_results:
+             total_available += 1
+
+        # Apply offset
+        page_bibcodes = sorted_bibcodes[request.offset:]
+
+        # Fetch paper details
+        bcs = [bc for bc, _ in page_bibcodes]
+        papers = paper_repo.get_batch(bcs)
+        paper_map = {p.bibcode: p for p in papers}
+
+        for bibcode, info in page_bibcodes:
+            if bibcode in seen_bibcodes:
+                continue
+            seen_bibcodes.add(bibcode)
+
+            paper = paper_map.get(bibcode)
+            distance = info["distance"]
+
+            results.append(UnifiedResultItem(
+                bibcode=bibcode,
+                title=paper.title if paper else info["metadata"].get("title", ""),
+                year=paper.year if paper else info["metadata"].get("year"),
+                first_author=paper.first_author if paper else info["metadata"].get("first_author"),
+                authors=_parse_authors(paper) if paper else None,
+                abstract=paper.abstract[:500] if paper and paper.abstract else None,
+                citation_count=paper.citation_count if paper else None,
+                journal=paper.journal if paper else None,
+                in_library=True,
+                relevance_score=round(1.0 - min(distance, 1.0), 3),
+                source="pdf",
+            ))
+
+        return results, total_available
+    except Exception as e:
+        print(f"PDF search failed: {e}")
+        return [], 0
+
+
+async def _search_ads(
+    request: UnifiedSearchRequest,
+    query: str,
+    ads_client,
+    paper_repo: PaperRepository,
+    seen_bibcodes: set,
+) -> tuple[List[UnifiedResultItem], int]:
+    """Search NASA ADS API with pagination."""
+    results = []
+    try:
+        # Build year range for ADS query
+        year_range = None
+        if request.min_year or request.max_year:
+            min_y = request.min_year or 0
+            max_y = request.max_year or 9999
+            year_range = (min_y, max_y)
+
+        # Over-fetch if filtering by min_citations (ADS doesn't support it natively)
+        fetch_limit = request.limit
+        if request.min_citations:
+            fetch_limit = request.limit * 3
+
+        ads_papers = await asyncio.to_thread(
+            ads_client.search,
+            query,
+            limit=fetch_limit,
+            start=request.offset,
+            year_range=year_range,
+            save=False,
+        )
+
+        # Apply min_citations filter client-side
+        if request.min_citations:
+            ads_papers = [
+                p for p in ads_papers
+                if (p.citation_count or 0) >= request.min_citations
+            ][:request.limit]
+
+        # Check which papers are in library
+        bibcodes = [p.bibcode for p in ads_papers]
+        local_papers = paper_repo.get_batch(bibcodes)
+        local_map = {p.bibcode: p for p in local_papers}
+
+        # Estimate total: ADS doesn't return total easily, use len as lower bound
+        total_available = request.offset + len(ads_papers)
+        # If we got exactly the requested limit, there are likely more results
+        if len(ads_papers) >= request.limit:
+            total_available += request.limit  # Assume there's more
+
+        for paper in ads_papers:
+            if paper.bibcode in seen_bibcodes:
+                continue
+            seen_bibcodes.add(paper.bibcode)
+
+            local = local_map.get(paper.bibcode)
+
+            results.append(UnifiedResultItem(
+                bibcode=paper.bibcode,
+                title=paper.title or "",
+                year=paper.year,
+                first_author=paper.first_author,
+                authors=_parse_authors(paper),
+                abstract=paper.abstract[:500] if paper.abstract else None,
+                citation_count=paper.citation_count,
+                journal=paper.journal,
+                in_library=local is not None,
+                source="ads",
+            ))
+
+        return results, total_available
+    except Exception as e:
+        print(f"ADS search failed: {e}")
+        return [], 0
 
 
 @router.post("/semantic/stream")

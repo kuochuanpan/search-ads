@@ -556,6 +556,8 @@ export function SettingsPage() {
                 <StatRow label="ADS Calls" value={apiUsage?.ads_calls ?? 0} />
                 <StatRow label="OpenAI Calls" value={apiUsage?.openai_calls ?? 0} />
                 <StatRow label="Anthropic Calls" value={apiUsage?.anthropic_calls ?? 0} />
+                <StatRow label="Gemini Calls" value={apiUsage?.gemini_calls ?? 0} />
+                <StatRow label="Ollama Calls" value={apiUsage?.ollama_calls ?? 0} />
               </div>
             </div>
           )}

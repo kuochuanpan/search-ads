@@ -29,6 +29,30 @@ class Database:
     def create_tables(self):
         """Create all database tables."""
         SQLModel.metadata.create_all(self.engine)
+        self._migrate_tables()
+
+    def _migrate_tables(self):
+        """Perform manual migrations for schema updates."""
+        # Check ApiUsage table for new columns
+        from sqlalchemy import text
+        with self.engine.connect() as conn:
+            try:
+                # Check if gemini_calls column exists
+                # SQLite PRAGMA table_info returns (cid, name, type, notnull, dflt_value, pk)
+                columns = conn.execute(text("PRAGMA table_info(api_usage)")).fetchall()
+                col_names = [c[1] for c in columns]
+                
+                if "gemini_calls" not in col_names:
+                    print("Migrating: Adding gemini_calls to api_usage")
+                    conn.execute(text("ALTER TABLE api_usage ADD COLUMN gemini_calls INTEGER DEFAULT 0 NOT NULL"))
+                    
+                if "ollama_calls" not in col_names:
+                    print("Migrating: Adding ollama_calls to api_usage")
+                    conn.execute(text("ALTER TABLE api_usage ADD COLUMN ollama_calls INTEGER DEFAULT 0 NOT NULL"))
+                    
+                conn.commit()
+            except Exception as e:
+                print(f"Migration warning: {e}")
 
     def get_session(self) -> Session:
         """Get a new database session."""
@@ -653,6 +677,38 @@ class ApiUsageRepository:
             today = self._get_today()
             usage = session.get(ApiUsage, today)
             return usage.anthropic_calls if usage else 0
+
+    def increment_gemini(self) -> int:
+        """Increment Gemini API call count and return new count."""
+        with self.db.get_session() as session:
+            usage = self._get_or_create_today(session)
+            usage.gemini_calls += 1
+            session.add(usage)
+            session.commit()
+            return usage.gemini_calls
+
+    def get_gemini_usage_today(self) -> int:
+        """Get today's Gemini API call count."""
+        with self.db.get_session() as session:
+            today = self._get_today()
+            usage = session.get(ApiUsage, today)
+            return usage.gemini_calls if usage else 0
+
+    def increment_ollama(self) -> int:
+        """Increment Ollama API call count and return new count."""
+        with self.db.get_session() as session:
+            usage = self._get_or_create_today(session)
+            usage.ollama_calls += 1
+            session.add(usage)
+            session.commit()
+            return usage.ollama_calls
+
+    def get_ollama_usage_today(self) -> int:
+        """Get today's Ollama API call count."""
+        with self.db.get_session() as session:
+            today = self._get_today()
+            usage = session.get(ApiUsage, today)
+            return usage.ollama_calls if usage else 0
 
 
 class NoteRepository:

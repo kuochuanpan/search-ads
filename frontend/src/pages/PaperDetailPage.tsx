@@ -244,7 +244,8 @@ export function PaperDetailPage() {
       {/* Back button */}
       <button
         onClick={() => {
-          if ((location.state as any)?.from === 'library') {
+          const from = (location.state as any)?.from
+          if (from === 'library' || from === 'search') {
             router.history.back()
           } else {
             navigate({ to: '/library' })
@@ -253,7 +254,7 @@ export function PaperDetailPage() {
         className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
       >
         <Icon icon={ArrowLeft} size={18} />
-        Back to Library
+        {(location.state as any)?.from === 'search' ? 'Back to Search Results' : 'Back to Library'}
       </button>
 
       {/* Title and metadata */}

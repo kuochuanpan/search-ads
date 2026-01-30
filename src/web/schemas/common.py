@@ -46,3 +46,5 @@ class ApiUsageResponse(BaseModel):
     ads_calls: int
     openai_calls: int
     anthropic_calls: int
+    gemini_calls: int
+    ollama_calls: int
