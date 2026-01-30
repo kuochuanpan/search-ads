@@ -1,6 +1,6 @@
 # Search-ADS
 
-![Version](https://img.shields.io/badge/version-0.6.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.7.0--beta-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![Tauri](https://img.shields.io/badge/tauri-v2-orange)
@@ -10,7 +10,7 @@
 
 Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search and LLM-powered analysis to make managing your research library effortless.
 
-**Version: 0.6.0-beta**
+**Version: 0.7.0-beta**
 
 ## Screenshots
 
@@ -41,6 +41,7 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 - **Web UI & CLI** - Use whichever interface suits your workflow
 - **macOS Native App** - Standalone desktop application with Tauri
 - **Cross-Platform** - Runs on macOS, Linux, and Windows (experimental)
+- **Multi-Provider Support** - Use OpenAI, Anthropic (Claude), Google Gemini, or local LLMs (Ollama)
 
 > **Note:** The provided scripts (`install.sh`, `launch.sh`) are designed for macOS and Linux (or WSL). Windows users may need to execute the commands from these scripts manually or use WSL.
 
@@ -60,6 +61,8 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 **Optional (for AI features):**
 - OpenAI API key (for embeddings and search)
 - Anthropic API key (for LLM analysis)
+- Google Gemini API key (alternative LLM)
+- Ollama (for local LLMs)
 
 ## Quick Start
 
@@ -120,12 +123,26 @@ OPENAI_API_KEY=your_openai_api_key
 # Optional (preferred for LLM analysis)
 ANTHROPIC_API_KEY=your_anthropic_api_key
 
+# Optional (Google Gemini)
+GEMINI_API_KEY=your_gemini_api_key
+
+# Optional (LLM Provider Selection)
+# Options: openai, anthropic, gemini, ollama
+LLM_PROVIDER="openai"
+EMBEDDING_PROVIDER="openai"
+
+# Optional (Ollama Configuration)
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="llama3"
+OLLAMA_EMBEDDING_MODEL="nomic-embed-text"
+
 # Optional (for "My Papers" feature)
 MY_AUTHOR_NAMES="Smith, J.; Smith, John"
 
 # Optional (customize LLM models)
 OPENAI_MODEL="gpt-4o-mini"
 ANTHROPIC_MODEL="claude-3-haiku-20240307"
+GEMINI_MODEL="gemini-1.5-flash"
 ```
 
 **Get your API keys:**
