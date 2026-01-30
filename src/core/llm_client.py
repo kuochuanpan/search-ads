@@ -239,7 +239,11 @@ Return ONLY the JSON object, no additional text."""
 
 Return the JSON analysis."""
 
-        response = self._call_llm(system_prompt, user_prompt, json_mode=True)
+        try:
+            response = self._call_llm(system_prompt, user_prompt, json_mode=True)
+        except Exception as e:
+            # Fallback if LLM call fails (e.g. no key, connection error)
+            return self._fallback_context_analysis(latex_context, str(e))
 
         # Parse JSON response
         try:
