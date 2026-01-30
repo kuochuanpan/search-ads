@@ -172,16 +172,36 @@ search-ads find --context "Core-collapse supernovae are the primary mechanism fo
 search-ads fill --bibcode "2021Natur.589...29B" --tex-file "paper.tex" --line 15 --column 28
 ```
 
-5. **Result:** The LaTeX file now has `\cite{burrows2021}` and the BibTeX entry is added to the bibliography.
+5. **Result:** The LaTeX file now has `\cite{2021Natur.589...29B}` and the BibTeX entry is added to the bibliography. (Citation keys default to the ADS bibcode format.)
+
+## Search Filters
+
+The `find` command supports additional filters:
+
+```bash
+# Filter by author
+search-ads find --context "stellar evolution" --author "Pan"
+
+# Filter by year
+search-ads find --context "black holes" --year 2020
+search-ads find --context "cosmology" --year 2018-2022
+
+# Request multiple references (for \cite{,} patterns)
+search-ads find --context "text needing two refs" --num-refs 2
+```
 
 ## Environment Requirements
 
-The tool requires API keys in `.env` or environment:
+The tool requires API keys configured in `~/.search-ads/.env`:
 - `ADS_API_KEY`: NASA ADS API token (required for ADS searches)
-- `OPENAI_API_KEY`: For embeddings and LLM analysis (recommended)
-- `ANTHROPIC_API_KEY`: Alternative LLM backend (optional)
+- `LLM_PROVIDER`: Which LLM to use - openai, anthropic, gemini, or ollama
+- `OPENAI_API_KEY`: For OpenAI embeddings and LLM analysis
+- `ANTHROPIC_API_KEY`: For Anthropic/Claude LLM backend
+- `GEMINI_API_KEY`: For Google Gemini LLM backend
 
 Get an ADS API key at: https://ui.adsabs.harvard.edu/user/settings/token
+
+Use `search-ads config` to view and update settings.
 
 ## Tips
 
@@ -190,3 +210,4 @@ Get an ADS API key at: https://ui.adsabs.harvard.edu/user/settings/token
 - The tool learns from your research area as you seed more papers
 - For broad introductory statements, the tool prefers review papers
 - For specific claims, it finds papers with supporting evidence
+- Notes attached to papers (via `search-ads note`) are also searched during `find --local`
