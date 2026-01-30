@@ -165,6 +165,8 @@ class ApiUsage(SQLModel, table=True):
     ads_calls: int = Field(default=0)
     openai_calls: int = Field(default=0)
     anthropic_calls: int = Field(default=0)
+    gemini_calls: int = Field(default=0)
+    ollama_calls: int = Field(default=0)
 
 
 class Note(SQLModel, table=True):

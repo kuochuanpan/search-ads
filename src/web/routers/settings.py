@@ -311,6 +311,8 @@ async def get_api_usage(
         ads_calls=api_usage_repo.get_ads_usage_today(),
         openai_calls=api_usage_repo.get_openai_usage_today(),
         anthropic_calls=api_usage_repo.get_anthropic_usage_today(),
+        gemini_calls=api_usage_repo.get_gemini_usage_today(),
+        ollama_calls=api_usage_repo.get_ollama_usage_today(),
     )
 
 

@@ -145,6 +145,7 @@ class LLMClient:
                 temperature=0.0,
             ),
         )
+        self.usage_repo.increment_gemini()
         return response.text
 
     def _call_ollama(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
@@ -176,6 +177,7 @@ class LLMClient:
             )
             response.raise_for_status()
             result = response.json()
+            self.usage_repo.increment_ollama()
             return result["message"]["content"]
         except requests.RequestException as e:
             raise ValueError(f"Ollama API call failed: {e}")

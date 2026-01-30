@@ -93,6 +93,8 @@ export interface ApiUsageResponse {
   ads_calls: number
   openai_calls: number
   anthropic_calls: number
+  gemini_calls: number
+  ollama_calls: number
 }
 
 export interface SettingsResponse {
