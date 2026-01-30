@@ -372,6 +372,7 @@ class VectorStore:
         query: str,
         n_results: int = 10,
         min_year: Optional[int] = None,
+        max_year: Optional[int] = None,
         min_citations: Optional[int] = None,
     ) -> list[dict]:
         """Search for papers by semantic similarity.
@@ -380,6 +381,7 @@ class VectorStore:
             query: Search query text
             n_results: Maximum number of results to return
             min_year: Optional minimum publication year filter
+            max_year: Optional maximum publication year filter
             min_citations: Optional minimum citation count filter
 
         Returns:
@@ -391,6 +393,8 @@ class VectorStore:
 
         if min_year:
             where_clauses.append({"year": {"$gte": min_year}})
+        if max_year:
+            where_clauses.append({"year": {"$lte": max_year}})
         if min_citations:
             where_clauses.append({"citation_count": {"$gte": min_citations}})
 
@@ -575,6 +579,9 @@ class VectorStore:
         query: str,
         n_results: int = 10,
         bibcode: Optional[str] = None,
+        min_year: Optional[int] = None,
+        max_year: Optional[int] = None,
+        min_citations: Optional[int] = None,
     ) -> list[dict]:
         """Search PDF contents by semantic similarity.
 
@@ -582,6 +589,9 @@ class VectorStore:
             query: Search query text
             n_results: Maximum number of results to return
             bibcode: Optional filter to specific paper
+            min_year: Optional minimum publication year filter
+            max_year: Optional maximum publication year filter
+            min_citations: Optional minimum citation count filter
 
         Returns:
             List of dicts with bibcode, chunk_index, distance, and document

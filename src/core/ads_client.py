@@ -183,6 +183,7 @@ class ADSClient:
         self,
         query: str,
         limit: int = 10,
+        start: int = 0,
         sort: str = "citation_count desc",
         year_range: Optional[tuple[int, int]] = None,
         save: bool = True,
@@ -192,6 +193,7 @@ class ADSClient:
         Args:
             query: Search query string
             limit: Maximum number of results
+            start: Offset for pagination (0-based)
             sort: Sort order (default: by citation count)
             year_range: Optional (min_year, max_year) tuple
             save: Whether to save results to database
@@ -212,6 +214,7 @@ class ADSClient:
                 fl=self.FIELDS,
                 sort=sort,
                 rows=limit,
+                start=start,
             )
             articles = list(search)
             self._track_call()
@@ -233,6 +236,7 @@ class ADSClient:
         self,
         query: str,
         limit: int = 10,
+        start: int = 0,
         sort: str = "citation_count desc",
         year_range: Optional[tuple[int, int]] = None,
         save: bool = True,
@@ -242,6 +246,7 @@ class ADSClient:
         Args:
             query: Search query string
             limit: Maximum number of results
+            start: Offset for pagination (0-based)
             sort: Sort order (default: by citation count)
             year_range: Optional (min_year, max_year) tuple
             save: Whether to save results to database
@@ -262,6 +267,7 @@ class ADSClient:
                 fl=self.FIELDS,
                 sort=sort,
                 rows=limit,
+                start=start,
             )
             # Note: ads.SearchQuery is an iterator, so we can iterate directly
             # However, to be safe and consistent with previous behavior (where we listed first),

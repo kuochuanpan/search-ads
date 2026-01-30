@@ -1,171 +1,191 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Sparkles, BookOpen, FileText, Library, Plus, Check, ChevronDown, ChevronUp, ExternalLink, Copy, FileCode } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import {
+  Search, Sparkles, BookOpen, FileText, Globe,
+  Plus, Check, ChevronDown, ChevronUp, ExternalLink, Copy, FileCode, Library, Loader2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
-import { useAISearch } from '@/hooks/useSearch'
+import { useUnifiedSearch, UnifiedSearchParams } from '@/hooks/useSearch'
 import { useProjects, useAddPapersToProject } from '@/hooks/useProjects'
-import { api, SearchResultItem } from '@/lib/api'
+import { api, SearchMode, SearchScope, UnifiedSearchResultItem } from '@/lib/api'
 
 type CopiedType = 'bibtex' | 'aastex' | 'bibcode' | null
 
-type SearchMode = 'natural' | 'keywords' | 'similar'
-type SearchScope = 'library' | 'ads' | 'pdf'
+const VISIBLE_PAGE_SIZE = 20
 
-// Citation type colors and descriptions
-const citationTypeInfo: Record<string, { color: string; description: string }> = {
-  foundational: { color: 'bg-purple-500', description: 'Seminal papers establishing fundamental concepts' },
-  review: { color: 'bg-blue-500', description: 'Review articles summarizing a field' },
-  methodological: { color: 'bg-green-500', description: 'Papers describing methods/techniques' },
-  supporting: { color: 'bg-yellow-500', description: 'Papers with supporting evidence' },
-  contrasting: { color: 'bg-orange-500', description: 'Papers to contrast against' },
-  general: { color: 'bg-gray-500', description: 'General reference' },
+const SEARCH_STATE_KEY = 'search-page-state'
+
+// Citation type colors
+const citationTypeInfo: Record<string, { color: string }> = {
+  foundational: { color: 'bg-purple-500' },
+  review: { color: 'bg-blue-500' },
+  methodological: { color: 'bg-green-500' },
+  supporting: { color: 'bg-yellow-500' },
+  contrasting: { color: 'bg-orange-500' },
+  general: { color: 'bg-gray-500' },
 }
 
 export function SearchPage() {
+  const navigate = useNavigate()
+
+  // Search state
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('natural')
   const [scope, setScope] = useState<SearchScope>('library')
   const [minYear, setMinYear] = useState<number | undefined>()
+  const [maxYear, setMaxYear] = useState<number | undefined>()
   const [minCitations, setMinCitations] = useState<number | undefined>()
+
+  // Submitted search params (triggers query)
+  const [searchParams, setSearchParams] = useState<UnifiedSearchParams | null>(null)
+  const searchIdRef = useRef(0)
+
+  // UI state
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE)
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set())
   const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedForAdd, setSelectedForAdd] = useState<SearchResultItem | null>(null)
+  const [selectedForAdd, setSelectedForAdd] = useState<UnifiedSearchResultItem | null>(null)
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set())
   const [copiedState, setCopiedState] = useState<{ bibcode: string; type: CopiedType } | null>(null)
   const [addedToLibrary, setAddedToLibrary] = useState<Set<string>>(new Set())
+  const [isAddingPaper, setIsAddingPaper] = useState(false)
 
-  // Streaming state
-  const [streamResults, setStreamResults] = useState<SearchResultItem[]>([])
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [searchProgress, setSearchProgress] = useState<{
-    ads?: { current: number, total?: number, message: string },
-    library?: { current: number, total?: number, message: string },
-    natural?: { message: string }
-  }>({})
+  // Refs
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const hasRestoredState = useRef(false)
 
   const queryClient = useQueryClient()
   const { data: projects } = useProjects()
   const addToProject = useAddPapersToProject()
-  const aiSearch = useAISearch()
 
+  // Unified search query
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetching,
+    isLoading,
+    isError,
+    error,
+  } = useUnifiedSearch(searchParams)
 
-  const handleSearch = async () => {
+  // Flatten all pages into one results array
+  const allResults = data?.pages.flatMap(p => p.results) ?? []
+  const displayedResults = allResults.slice(0, visibleCount)
+  const aiAnalysis = data?.pages[0]?.ai_analysis
+  const totalAvailable = data?.pages[0]?.total_available ?? 0
+
+  // Scroll restoration on mount
+  useEffect(() => {
+    if (hasRestoredState.current) return
+    hasRestoredState.current = true
+
+    const saved = sessionStorage.getItem(SEARCH_STATE_KEY)
+    if (!saved) return
+
+    try {
+      const state = JSON.parse(saved)
+      setQuery(state.query || '')
+      setMode(state.mode || 'natural')
+      setScope(state.scope || 'library')
+      setMinYear(state.minYear)
+      setMaxYear(state.maxYear)
+      setMinCitations(state.minCitations)
+      setVisibleCount(state.visibleCount || VISIBLE_PAGE_SIZE)
+      setAddedToLibrary(new Set(state.addedToLibrary || []))
+
+      // Trigger the search to restore results
+      if (state.query) {
+        searchIdRef.current = state.searchId || 1
+        setSearchParams({
+          query: state.query,
+          mode: state.mode || 'natural',
+          scope: state.scope || 'library',
+          min_year: state.minYear,
+          max_year: state.maxYear,
+          min_citations: state.minCitations,
+          searchId: searchIdRef.current,
+        })
+      }
+
+      // Restore scroll after results load
+      if (state.scrollY) {
+        const scrollY = state.scrollY
+        const tryRestore = () => {
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY)
+          })
+        }
+        // Wait a bit for results to render
+        setTimeout(tryRestore, 100)
+        setTimeout(tryRestore, 300)
+        setTimeout(tryRestore, 600)
+      }
+    } catch {
+      // ignore
+    }
+    sessionStorage.removeItem(SEARCH_STATE_KEY)
+  }, [])
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return
+
+        if (visibleCount < allResults.length) {
+          // Reveal more from client cache
+          setVisibleCount(prev => prev + VISIBLE_PAGE_SIZE)
+        } else if (hasNextPage && !isFetchingNextPage) {
+          // Need to fetch next batch from backend
+          fetchNextPage()
+        }
+      },
+      { rootMargin: '400px' } // Start loading well before user reaches bottom
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [visibleCount, allResults.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  // Background prefetch: when user is within 80% of cached results, prefetch next batch
+  useEffect(() => {
+    if (
+      visibleCount >= allResults.length * 0.6 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      fetchNextPage()
+    }
+  }, [visibleCount, allResults.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  // Handlers
+  const handleSearch = () => {
     if (!query.trim()) return
 
-    // Clear locally tracked additions when performing a new search
     setAddedToLibrary(new Set())
     setExpandedResults(new Set())
+    setVisibleCount(VISIBLE_PAGE_SIZE)
 
-    // If Natural Language mode, use Streaming AI search
-    if (mode === 'natural') {
-      setIsStreaming(true)
-      setStreamResults([])
-      setAiAnalysis(null)
-      setSearchProgress({})
-
-      const params = {
-        query: query.trim(),
-        limit: 20,
-        search_library: scope === 'library',
-        search_ads: scope === 'ads',
-        search_pdf: scope === 'pdf',
-        min_year: minYear,
-        min_citations: minCitations,
-        use_llm: true,
-      }
-
-      try {
-        for await (const event of api.streamAISearch(params)) {
-          if (event.type === 'progress') {
-            setSearchProgress(prev => ({ ...prev, natural: { message: event.message || 'Processing...' } }))
-          } else if (event.type === 'analysis' && event.data) {
-            setAiAnalysis(event.data)
-          } else if (event.type === 'result' && event.data) {
-            // The result event currently allows sending the whole response object
-            // But my backend sends 'AISearchResponse' as data for 'result' type
-            if (event.data.results) {
-              setStreamResults(event.data.results)
-            }
-            if (event.data.ai_analysis) {
-              setAiAnalysis(event.data.ai_analysis)
-            }
-          } else if (event.type === 'log') {
-            // Optional: show logs? For now just ignore or log to console
-            console.log('[Search Log]', event.message)
-          }
-        }
-      } catch (e) {
-        console.error('AI Search stream failed', e)
-        // Fallback or show error?
-      } finally {
-        setIsStreaming(false)
-        setSearchProgress({})
-      }
-      return
-    }
-
-    // Keyword/Similar mode: Use Streaming
-    setIsStreaming(true)
-    setStreamResults([])
-    setAiAnalysis(null)
-    setSearchProgress({})
-
-    // Create promises for each scope
-    const tasks = []
-
-    if (scope === 'ads') {
-      tasks.push((async () => {
-        try {
-          setSearchProgress(prev => ({ ...prev, ads: { current: 0, message: 'Starting ADS search...' } }))
-          for await (const event of api.streamSearchAds(query.trim(), 20)) {
-            if (event.type === 'progress') {
-              setSearchProgress(prev => ({ ...prev, ads: { current: event.current || 0, total: event.total, message: event.message || '' } }))
-            } else if (event.type === 'result' && event.data) {
-              setStreamResults(prev => {
-                // Deduplicate
-                if (prev.some(p => p.bibcode === event.data?.bibcode)) return prev
-                return [...prev, { ...event.data, source: 'ads' } as SearchResultItem]
-              })
-            }
-          }
-        } catch (e) {
-          console.error('ADS stream failed', e)
-        } finally {
-          setSearchProgress(prev => ({ ...prev, ads: undefined }))
-        }
-      })())
-    }
-
-    if (scope === 'library') {
-      tasks.push((async () => {
-        try {
-          setSearchProgress(prev => ({ ...prev, library: { current: 0, message: 'Starting library search...' } }))
-          for await (const event of api.streamSearchSemantic(query.trim(), 20, minYear, minCitations)) {
-            if (event.type === 'progress') {
-              setSearchProgress(prev => ({ ...prev, library: { current: event.current || 0, total: event.total, message: event.message || '' } }))
-            } else if (event.type === 'result' && event.data) {
-              setStreamResults(prev => {
-                // Deduplicate
-                if (prev.some(p => p.bibcode === event.data?.bibcode)) return prev
-                return [...prev, { ...event.data, source: 'library' } as SearchResultItem]
-              })
-            }
-          }
-        } catch (e) {
-          console.error('Library stream failed', e)
-        } finally {
-          setSearchProgress(prev => ({ ...prev, library: undefined }))
-        }
-      })())
-    }
-
-    await Promise.all(tasks)
-    setIsStreaming(false)
+    searchIdRef.current += 1
+    setSearchParams({
+      query: query.trim(),
+      mode,
+      scope,
+      min_year: minYear,
+      max_year: maxYear,
+      min_citations: minCitations,
+      searchId: searchIdRef.current,
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -176,16 +196,39 @@ export function SearchPage() {
   }
 
   const toggleExpanded = (bibcode: string) => {
-    const newExpanded = new Set(expandedResults)
-    if (newExpanded.has(bibcode)) {
-      newExpanded.delete(bibcode)
-    } else {
-      newExpanded.add(bibcode)
-    }
-    setExpandedResults(newExpanded)
+    setExpandedResults(prev => {
+      const next = new Set(prev)
+      if (next.has(bibcode)) next.delete(bibcode)
+      else next.add(bibcode)
+      return next
+    })
   }
 
-  const openAddModal = (paper: SearchResultItem) => {
+  const handlePaperClick = useCallback((paper: UnifiedSearchResultItem) => {
+    if (!paper.in_library && !addedToLibrary.has(paper.bibcode)) return
+
+    // Save state for scroll restoration
+    sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+      query,
+      mode,
+      scope,
+      minYear,
+      maxYear,
+      minCitations,
+      visibleCount,
+      scrollY: window.scrollY,
+      addedToLibrary: Array.from(addedToLibrary),
+      searchId: searchIdRef.current,
+    }))
+
+    navigate({
+      to: '/library/$bibcode',
+      params: { bibcode: paper.bibcode },
+      state: { from: 'search' } as any,
+    })
+  }, [query, mode, scope, minYear, maxYear, minCitations, visibleCount, addedToLibrary, navigate])
+
+  const openAddModal = (paper: UnifiedSearchResultItem) => {
     setSelectedForAdd(paper)
     setSelectedProjects(new Set())
     setShowAddModal(true)
@@ -194,11 +237,10 @@ export function SearchPage() {
   const handleAddToLibrary = async () => {
     if (!selectedForAdd) return
 
+    setIsAddingPaper(true)
     try {
-      // Import the paper first
       await api.importFromAds(selectedForAdd.bibcode)
 
-      // Add to selected projects
       for (const projectName of selectedProjects) {
         await addToProject.mutateAsync({
           projectName,
@@ -206,21 +248,19 @@ export function SearchPage() {
         })
       }
 
-      // Mark the paper as added locally to update the UI without re-running search
       setAddedToLibrary(prev => new Set(prev).add(selectedForAdd.bibcode))
-
-      // Invalidate queries to refresh library view
       queryClient.invalidateQueries({ queryKey: ['papers'] })
       queryClient.invalidateQueries({ queryKey: ['stats'] })
-
       setShowAddModal(false)
       setSelectedForAdd(null)
     } catch (error) {
       console.error('Failed to add paper:', error)
+    } finally {
+      setIsAddingPaper(false)
     }
   }
 
-  const copyBibTeX = async (paper: SearchResultItem) => {
+  const copyBibTeX = async (paper: UnifiedSearchResultItem) => {
     try {
       const result = await api.generateBibliography([paper.bibcode], 'bibtex')
       await navigator.clipboard.writeText(result.combined)
@@ -231,7 +271,7 @@ export function SearchPage() {
     }
   }
 
-  const copyAASTeX = async (paper: SearchResultItem) => {
+  const copyAASTeX = async (paper: UnifiedSearchResultItem) => {
     try {
       const result = await api.generateBibliography([paper.bibcode], 'aastex')
       await navigator.clipboard.writeText(result.combined)
@@ -242,7 +282,7 @@ export function SearchPage() {
     }
   }
 
-  const copyBibcode = async (paper: SearchResultItem) => {
+  const copyBibcode = async (paper: UnifiedSearchResultItem) => {
     try {
       await navigator.clipboard.writeText(paper.bibcode)
       setCopiedState({ bibcode: paper.bibcode, type: 'bibcode' })
@@ -257,6 +297,8 @@ export function SearchPage() {
     if (score >= 0.6) return 'text-yellow-600 dark:text-yellow-400'
     return 'text-gray-600 dark:text-gray-400'
   }
+
+  const isSearching = isLoading || (isFetching && !isFetchingNextPage)
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -274,13 +316,17 @@ export function SearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="e.g., I need a paper that established the connection between AGN feedback and quenching of star formation in massive galaxies"
+          placeholder={
+            scope === 'ads' && mode === 'keywords'
+              ? 'e.g., author:"Einstein" title:"relativity" year:1905'
+              : 'e.g., I need a paper about AGN feedback and quenching of star formation in massive galaxies'
+          }
           className="w-full h-24 p-3 border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
         />
 
         {/* Search Mode */}
         <div className="flex items-center gap-4 mt-4">
-          <span className="text-sm text-muted-foreground">Search mode:</span>
+          <span className="text-sm text-muted-foreground">Mode:</span>
           <div className="flex gap-2">
             <Button
               variant={mode === 'natural' ? 'secondary' : 'outline'}
@@ -296,13 +342,6 @@ export function SearchPage() {
               onClick={() => setMode('keywords')}
             >
               Keywords
-            </Button>
-            <Button
-              variant={mode === 'similar' ? 'secondary' : 'outline'}
-              size="sm"
-              onClick={() => setMode('similar')}
-            >
-              Similar to Paper
             </Button>
           </div>
         </div>
@@ -320,14 +359,6 @@ export function SearchPage() {
               Your Library
             </Button>
             <Button
-              variant={scope === 'ads' ? 'secondary' : 'outline'}
-              size="sm"
-              onClick={() => setScope('ads')}
-            >
-              <Icon icon={Search} size={14} />
-              ADS
-            </Button>
-            <Button
               variant={scope === 'pdf' ? 'secondary' : 'outline'}
               size="sm"
               onClick={() => setScope('pdf')}
@@ -335,20 +366,38 @@ export function SearchPage() {
               <Icon icon={FileText} size={14} />
               PDF Full-text
             </Button>
+            <Button
+              variant={scope === 'ads' ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setScope('ads')}
+            >
+              <Icon icon={Globe} size={14} />
+              ADS
+            </Button>
           </div>
         </div>
 
-        {/* Advanced Filters */}
-        <div className="flex items-center gap-4 mt-3">
+        {/* Filters */}
+        <div className="flex items-center gap-4 mt-3 flex-wrap">
           <span className="text-sm text-muted-foreground">Filters:</span>
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="text-sm">Min Year:</label>
               <input
                 type="number"
-                value={minYear || ''}
+                value={minYear ?? ''}
                 onChange={(e) => setMinYear(e.target.value ? parseInt(e.target.value) : undefined)}
                 placeholder="2000"
+                className="w-20 h-8 px-2 text-sm border rounded bg-background"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm">Max Year:</label>
+              <input
+                type="number"
+                value={maxYear ?? ''}
+                onChange={(e) => setMaxYear(e.target.value ? parseInt(e.target.value) : undefined)}
+                placeholder="2025"
                 className="w-20 h-8 px-2 text-sm border rounded bg-background"
               />
             </div>
@@ -356,7 +405,7 @@ export function SearchPage() {
               <label className="text-sm">Min Citations:</label>
               <input
                 type="number"
-                value={minCitations || ''}
+                value={minCitations ?? ''}
                 onChange={(e) => setMinCitations(e.target.value ? parseInt(e.target.value) : undefined)}
                 placeholder="0"
                 className="w-20 h-8 px-2 text-sm border rounded bg-background"
@@ -368,82 +417,44 @@ export function SearchPage() {
         <Button
           className="w-full mt-4 bg-pink-500 hover:bg-pink-600 text-white"
           onClick={handleSearch}
-          disabled={(aiSearch.isPending || isStreaming) || !query.trim()}
+          disabled={isSearching || !query.trim()}
         >
           <Icon icon={Search} size={16} />
-          {aiSearch.isPending || isStreaming ? 'Searching...' : 'Search'}
+          {isSearching ? 'Searching...' : 'Search'}
         </Button>
 
-        {/* Progress Bars for Streaming */}
-        {isStreaming && (
+        {/* Animated progress bar */}
+        {isSearching && (
           <div className="mt-4 space-y-2">
+            <div className="text-sm text-muted-foreground">
+              {mode === 'natural'
+                ? 'Analyzing query with AI and searching...'
+                : `Searching ${scope === 'library' ? 'your library' : scope === 'pdf' ? 'PDF full-text' : 'NASA ADS'}...`}
+            </div>
+            <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(244,114,182,0.3), rgba(244,114,182,0.8), rgba(251,113,133,0.9), rgba(244,114,182,0.8), rgba(244,114,182,0.3), transparent)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s ease-in-out infinite',
+                  width: '100%',
+                  boxShadow: '0 0 12px rgba(244,114,182,0.5)',
+                }}
+              />
+            </div>
             <style>{`
               @keyframes shimmer {
                 0% { background-position: 200% 0; }
                 100% { background-position: -200% 0; }
               }
             `}</style>
-            {searchProgress.natural && (
-              <div className="text-sm">
-                <div className="flex justify-between mb-1">
-                  <span>{searchProgress.natural.message}</span>
-                </div>
-                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
-                    style={{
-                      width: '100%',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s ease-in-out infinite'
-                    }}
-                  ></div>
-                </div>
-              </div>
-            )}
-            {searchProgress.ads && (
-              <div className="text-sm">
-                <div className="flex justify-between mb-1">
-                  <span>ADS: {searchProgress.ads.message}</span>
-                  {searchProgress.ads.total && <span>{Math.round((searchProgress.ads.current / searchProgress.ads.total) * 100)}%</span>}
-                </div>
-                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
-                    style={{
-                      width: '100%',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s ease-in-out infinite'
-                    }}
-                  ></div>
-                </div>
-              </div>
-            )}
-            {searchProgress.library && (
-              <div className="text-sm">
-                <div className="flex justify-between mb-1">
-                  <span>Library: {searchProgress.library.message}</span>
-                  {searchProgress.library.total ? (
-                    <span>{Math.round((searchProgress.library.current / searchProgress.library.total) * 100)}%</span>
-                  ) : null}
-                </div>
-                <div className="w-full bg-pink-100 dark:bg-pink-950 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-pink-300 via-rose-400 to-pink-300 rounded-full shadow-[0_0_10px_rgba(244,114,182,0.5)]"
-                    style={{
-                      width: searchProgress.library.total ? `${(searchProgress.library.current / searchProgress.library.total) * 100}%` : '100%',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s ease-in-out infinite'
-                    }}
-                  ></div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </Card>
 
       {/* AI Analysis */}
-      {(aiSearch.data?.ai_analysis || aiAnalysis) && (
+      {mode === 'natural' && aiAnalysis && (
         <Card className="p-6 relative overflow-hidden border-l-4 border-l-pink-400">
           <div className="flex items-center gap-2 mb-3">
             <Icon icon={Sparkles} size={18} className="text-pink-500" />
@@ -452,16 +463,16 @@ export function SearchPage() {
           <div className="space-y-2 text-sm">
             <p>
               <span className="font-medium">Looking for:</span>{' '}
-              <span className={`px-2 py-0.5 rounded ${citationTypeInfo[(aiSearch.data?.ai_analysis || aiAnalysis).citation_type_needed]?.color || 'bg-gray-500'} text-white`}>
-                {(aiSearch.data?.ai_analysis || aiAnalysis).citation_type_needed}
+              <span className={`px-2 py-0.5 rounded ${citationTypeInfo[aiAnalysis.citation_type_needed]?.color || 'bg-gray-500'} text-white`}>
+                {aiAnalysis.citation_type_needed}
               </span>{' '}
-              paper about <strong>{(aiSearch.data?.ai_analysis || aiAnalysis).topic}</strong>
+              paper about <strong>{aiAnalysis.topic}</strong>
             </p>
-            <p className="text-muted-foreground">{(aiSearch.data?.ai_analysis || aiAnalysis).reasoning}</p>
-            {(aiSearch.data?.ai_analysis || aiAnalysis).keywords.length > 0 && (
-              <div className="flex items-center gap-2 mt-2">
+            <p className="text-muted-foreground">{aiAnalysis.reasoning}</p>
+            {aiAnalysis.keywords.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-muted-foreground">Keywords:</span>
-                {(aiSearch.data?.ai_analysis || aiAnalysis).keywords.map((kw: string) => (
+                {aiAnalysis.keywords.map((kw: string) => (
                   <Badge key={kw} variant="outline">{kw}</Badge>
                 ))}
               </div>
@@ -470,52 +481,60 @@ export function SearchPage() {
         </Card>
       )}
 
-      {/* Results (Unified Display) */}
-      {(
-        (aiSearch.data?.results && aiSearch.data.results.length > 0) ||
-        (streamResults.length > 0)
-      ) && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium">
-                Results ({aiSearch.data?.total_count || streamResults.length} papers)
-              </h3>
-            </div>
+      {/* Results */}
+      {displayedResults.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium">
+              Results ({totalAvailable > allResults.length ? `${allResults.length}+` : allResults.length} papers)
+            </h3>
+          </div>
 
-            {(aiSearch.data?.results || streamResults).map((paper, index) => (
+          {displayedResults.map((paper, index) => {
+            const isInLibrary = paper.in_library || addedToLibrary.has(paper.bibcode)
+            const isExpanded = expandedResults.has(paper.bibcode)
+            const showRelevance = mode === 'natural' && paper.relevance_score != null
+
+            return (
               <Card key={`${paper.bibcode}-${index}`} className="overflow-hidden">
                 <div className="p-4">
                   {/* Header row */}
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      {/* Rank and Title */}
                       <div className="flex items-start gap-3">
                         <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
                           {index + 1}
                         </span>
                         <div className="flex-1 min-w-0">
                           <button
-                            onClick={() => toggleExpanded(paper.bibcode)}
-                            className="text-left w-full group"
+                            onClick={() => isInLibrary ? handlePaperClick(paper) : toggleExpanded(paper.bibcode)}
+                            className={`text-left w-full group ${isInLibrary ? 'cursor-pointer' : ''}`}
+                            title={isInLibrary ? 'View paper details' : undefined}
                           >
                             <h4 className="font-medium group-hover:text-primary transition-colors line-clamp-2">
                               {paper.title}
                             </h4>
                           </button>
-                          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground flex-wrap">
                             <span>{paper.first_author}{paper.year ? ` et al. (${paper.year})` : ''}</span>
-                            {paper.citation_count !== undefined && (
+                            {paper.citation_count != null && (
                               <>
                                 <span>·</span>
                                 <span>{paper.citation_count.toLocaleString()} citations</span>
                               </>
                             )}
-                            {(paper.in_library || addedToLibrary.has(paper.bibcode)) && (
+                            {paper.journal && (
+                              <>
+                                <span>·</span>
+                                <span>{paper.journal}</span>
+                              </>
+                            )}
+                            {isInLibrary && (
                               <>
                                 <span>·</span>
                                 <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
                                   <Icon icon={Library} size={12} />
-                                  In library
+                                  In Library
                                 </span>
                               </>
                             )}
@@ -524,21 +543,25 @@ export function SearchPage() {
                       </div>
                     </div>
 
-                    {/* Relevance Score */}
-                    <div className="flex-shrink-0 text-right">
-                      <div className={`text-lg font-semibold ${getRelevanceColor(paper.relevance_score)}`}>
-                        {Math.round(paper.relevance_score * 100)}%
+                    {/* Relevance Score (natural mode only) */}
+                    {showRelevance && (
+                      <div className="flex-shrink-0 text-right">
+                        <div className={`text-lg font-semibold ${getRelevanceColor(paper.relevance_score!)}`}>
+                          {Math.round(paper.relevance_score! * 100)}%
+                        </div>
+                        {paper.citation_type && (
+                          <Badge
+                            className={`${citationTypeInfo[paper.citation_type]?.color || 'bg-gray-500'} text-white`}
+                          >
+                            {paper.citation_type}
+                          </Badge>
+                        )}
                       </div>
-                      <Badge
-                        className={`${citationTypeInfo[paper.citation_type]?.color || 'bg-gray-500'} text-white`}
-                      >
-                        {paper.citation_type}
-                      </Badge>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Why this paper? */}
-                  {paper.relevance_explanation && (
+                  {/* Relevance explanation */}
+                  {showRelevance && paper.relevance_explanation && (
                     <div className="mt-3 p-3 bg-secondary/50 rounded text-sm">
                       <span className="font-medium">Why this paper: </span>
                       {paper.relevance_explanation}
@@ -546,7 +569,7 @@ export function SearchPage() {
                   )}
 
                   {/* Expanded content */}
-                  {expandedResults.has(paper.bibcode) && (
+                  {isExpanded && (
                     <div className="mt-4 pt-4 border-t">
                       {paper.abstract && (
                         <div className="mb-4">
@@ -554,27 +577,19 @@ export function SearchPage() {
                           <p className="text-sm text-muted-foreground">{paper.abstract}</p>
                         </div>
                       )}
-
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Badge variant="outline">
-                          Source: {paper.source === 'library' ? 'Library' : paper.source === 'ads' ? 'ADS' : 'PDF'}
-                        </Badge>
-                        {paper.has_pdf && <Badge variant="outline">Has PDF</Badge>}
-                        {paper.pdf_embedded && <Badge variant="outline">Searchable PDF</Badge>}
-                      </div>
                     </div>
                   )}
 
                   {/* Actions */}
                   <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => toggleExpanded(paper.bibcode)}
                       >
-                        <Icon icon={expandedResults.has(paper.bibcode) ? ChevronUp : ChevronDown} size={14} />
-                        {expandedResults.has(paper.bibcode) ? 'Less' : 'More'}
+                        <Icon icon={isExpanded ? ChevronUp : ChevronDown} size={14} />
+                        {isExpanded ? 'Less' : 'More'}
                       </Button>
                       <Button
                         variant="ghost"
@@ -611,7 +626,7 @@ export function SearchPage() {
                     </div>
 
                     <div>
-                      {(paper.in_library || addedToLibrary.has(paper.bibcode)) ? (
+                      {isInLibrary ? (
                         <Button variant="outline" size="sm" disabled>
                           <Icon icon={Check} size={14} />
                           In Library
@@ -630,25 +645,52 @@ export function SearchPage() {
                   </div>
                 </div>
               </Card>
-            ))}
+            )
+          })}
+
+          {/* Scroll sentinel / loading more */}
+          <div ref={sentinelRef} className="py-4 flex justify-center">
+            {isFetchingNextPage && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Icon icon={Loader2} size={16} className="animate-spin" />
+                Loading more results...
+              </div>
+            )}
+            {!hasNextPage && visibleCount >= allResults.length && allResults.length > 0 && (
+              <p className="text-sm text-muted-foreground">No more results</p>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
       {/* Empty state */}
-      {!aiSearch.isPending && !isStreaming && !aiSearch.data?.results?.length && !streamResults.length && (
+      {!isSearching && !displayedResults.length && searchParams && (
         <Card className="p-6">
           <div className="text-center py-12 text-muted-foreground">
             <Icon icon={Search} size={48} className="mx-auto mb-4 opacity-50" />
-            <p>Enter a query above to search for papers</p>
+            <p>No papers found. Try different keywords or a broader search.</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Initial state */}
+      {!searchParams && !isSearching && (
+        <Card className="p-6">
+          <div className="text-center py-12 text-muted-foreground">
+            <Icon icon={Search} size={48} className="mx-auto mb-4 opacity-50" />
+            <p>Enter a query to search for papers</p>
           </div>
         </Card>
       )}
 
       {/* Error state */}
-      {aiSearch.isError && (
+      {isError && (
         <Card className="p-6 border-red-500">
           <div className="text-center py-4 text-red-600 dark:text-red-400">
-            <p>Search failed: {aiSearch.error?.message || 'Unknown error'}</p>
+            <p>Search failed: {(error as Error)?.message || 'Unknown error'}</p>
+            <Button variant="outline" className="mt-2" onClick={handleSearch}>
+              Retry
+            </Button>
           </div>
         </Card>
       )}
@@ -705,9 +747,13 @@ export function SearchPage() {
               <Button variant="outline" onClick={() => setShowAddModal(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAddToLibrary}>
-                <Icon icon={Plus} size={14} />
-                Add Paper
+              <Button onClick={handleAddToLibrary} disabled={isAddingPaper}>
+                {isAddingPaper ? (
+                  <Icon icon={Loader2} size={14} className="animate-spin" />
+                ) : (
+                  <Icon icon={Plus} size={14} />
+                )}
+                {isAddingPaper ? 'Adding...' : 'Add Paper'}
               </Button>
             </div>
           </div>

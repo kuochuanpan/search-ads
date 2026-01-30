@@ -173,6 +173,55 @@ export interface AskPaperResponse {
   sources_used: string[]
 }
 
+// Unified Search types
+export type SearchMode = 'natural' | 'keywords'
+export type SearchScope = 'library' | 'pdf' | 'ads'
+
+export interface UnifiedSearchRequest {
+  query: string
+  mode: SearchMode
+  scope: SearchScope
+  limit?: number
+  offset?: number
+  min_year?: number
+  max_year?: number
+  min_citations?: number
+}
+
+export interface UnifiedSearchResultItem {
+  bibcode: string
+  title: string
+  year?: number
+  first_author?: string
+  authors?: string[]
+  abstract?: string
+  citation_count?: number
+  journal?: string
+  in_library: boolean
+  relevance_score?: number
+  relevance_explanation?: string
+  citation_type?: string
+  source: string
+}
+
+export interface UnifiedAIAnalysis {
+  topic: string
+  claim: string
+  citation_type_needed: string
+  keywords: string[]
+  reasoning: string
+}
+
+export interface UnifiedSearchResponse {
+  results: UnifiedSearchResultItem[]
+  total_available: number
+  offset: number
+  limit: number
+  has_more: boolean
+  ai_analysis?: UnifiedAIAnalysis
+  query_used: string
+}
+
 // LaTeX types
 export interface EmptyCitationInfo {
   index: number
@@ -897,6 +946,13 @@ export const api = {
   clearAllData: () =>
     request<{ message: string; success: boolean }>('/settings/clear-data', {
       method: 'POST',
+    }),
+
+  // Unified Search
+  searchUnified: (params: UnifiedSearchRequest) =>
+    request<UnifiedSearchResponse>('/search/unified', {
+      method: 'POST',
+      body: JSON.stringify(params),
     }),
 
   // AI-powered Search
