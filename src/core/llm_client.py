@@ -135,8 +135,12 @@ class LLMClient:
 
         from google.genai import types
 
+        model_name = settings.gemini_model
+        if not model_name.startswith("models/"):
+             model_name = f"models/{model_name}"
+
         response = client.models.generate_content(
-            model=settings.gemini_model,
+            model=model_name,
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
