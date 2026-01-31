@@ -137,12 +137,11 @@ class LLMClient:
 
         model_name = settings.gemini_model
         if not model_name:
-            model_name = "gemini-1.5-flash"
+            model_name = "gemini-2.0-flash"
             
-        # The new SDK might be defaulting to v1beta which has different naming
-        # or the model name is actually different in the new GenAI SDK.
-        # Common model names for the new SDK are 'gemini-1.5-flash', etc.
-        # Let's try to strip 'models/' if it was there and use the bare name.
+        # Ensure the model name doesn't have the 'models/' prefix which causes 404 in some SDK versions
+        if "/" in model_name:
+            model_name = model_name.split("/")[-1]
 
         response = client.models.generate_content(
             model=model_name,
