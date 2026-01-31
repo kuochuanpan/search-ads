@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Embedding Models
     # OpenAI default handled in code (text-embedding-3-small)
     # Gemini default handled in code (models/embedding-001)
+    embedding_model: str = Field(default="models/text-embedding-004", alias="EMBEDDING_MODEL")
     ollama_embedding_model: str = Field(default="nomic-embed-text", alias="OLLAMA_EMBEDDING_MODEL")
 
     # Ollama Settings

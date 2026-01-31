@@ -135,8 +135,16 @@ class LLMClient:
 
         from google.genai import types
 
+        model_name = settings.gemini_model
+        if not model_name:
+            model_name = "gemini-2.0-flash"
+            
+        # Ensure the model name doesn't have the 'models/' prefix which causes 404 in some SDK versions
+        if "/" in model_name:
+            model_name = model_name.split("/")[-1]
+
         response = client.models.generate_content(
-            model=settings.gemini_model,
+            model=model_name,
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
