@@ -57,11 +57,9 @@ class GoogleGeminiEmbeddingFunction(EmbeddingFunction):
         """Generate embeddings for a list of documents."""
         client = self._get_client()
 
-        model = "text-embedding-004"
-
         try:
             result = client.models.embed_content(
-                model=model,
+                model=self.model_name,
                 contents=input,
             )
             return [e.values for e in result.embeddings]
@@ -143,9 +141,13 @@ class VectorStore:
 
             elif provider == "gemini":
                 if settings.gemini_api_key:
+                    model_name = getattr(settings, "embedding_model", "models/text-embedding-004")
+                    if not model_name or model_name == "openai": # fallback
+                         model_name = "models/text-embedding-004"
+                    
                     self._embedding_function = GoogleGeminiEmbeddingFunction(
                         api_key=settings.gemini_api_key,
-                        model_name="models/text-embedding-004"
+                        model_name=model_name
                     )
                 else:
                     raise ValueError("Gemini API key not set for embeddings")
