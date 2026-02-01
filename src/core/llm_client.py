@@ -10,6 +10,20 @@ from src.db.models import Paper
 from src.db.repository import ApiUsageRepository
 
 
+def normalize_gemini_model_name(model_name: str, default: str = "gemini-2.0-flash") -> str:
+    """Normalize a Gemini model name for the Google GenAI SDK.
+
+    - Falls back to *default* when *model_name* is empty.
+    - Strips a leading ``models/`` prefix that causes 404 errors in some SDK
+      versions.
+    """
+    if not model_name:
+        model_name = default
+    if "/" in model_name:
+        model_name = model_name.split("/")[-1]
+    return model_name
+
+
 class CitationType(str, Enum):
     """Types of citations based on their purpose."""
 
@@ -135,13 +149,7 @@ class LLMClient:
 
         from google.genai import types
 
-        model_name = settings.gemini_model
-        if not model_name:
-            model_name = "gemini-2.0-flash"
-            
-        # Ensure the model name doesn't have the 'models/' prefix which causes 404 in some SDK versions
-        if "/" in model_name:
-            model_name = model_name.split("/")[-1]
+        model_name = normalize_gemini_model_name(settings.gemini_model)
 
         response = client.models.generate_content(
             model=model_name,
