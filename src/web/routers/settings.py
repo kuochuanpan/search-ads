@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 from src.core.config import settings
+from src.core.llm_client import normalize_gemini_model_name
 from src.db.repository import PaperRepository, ProjectRepository, NoteRepository, ApiUsageRepository
 from src.web.dependencies import (
     get_paper_repo,
@@ -381,7 +382,7 @@ async def test_api_key(
             from google import genai
             client = genai.Client(api_key=settings.gemini_api_key)
             client.models.generate_content(
-                model=settings.gemini_model,
+                model=normalize_gemini_model_name(settings.gemini_model),
                 contents="Hi",
             )
             return {"valid": True, "message": "Gemini API key is valid"}
