@@ -1,27 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
-import { Sparkles, Lightbulb, BookOpen } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Icon } from '@/components/ui/Icon';
-import { api } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
+import { Sparkles, Lightbulb, BookOpen } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
+import { Icon } from '@/components/ui/Icon'
+import { api } from '@/lib/api'
+import type { AssistantInsightsData } from '@/lib/api'
 
-interface Recommendation {
-  bibcode: string;
-  title: string;
-  reason: string;
-}
-
-interface InsightsData {
-  last_updated: string | null;
-  summary: string;
-  recommendations: Recommendation[];
-  insights: string[];
-}
-
-async function fetchInsights(): Promise<InsightsData> {
-  const res = await api.getAssistantInsights();
-  return res;
+async function fetchInsights(): Promise<AssistantInsightsData> {
+  return api.getAssistantInsights()
 }
 
 export function AssistantInsights() {
@@ -69,6 +56,9 @@ export function AssistantInsights() {
     )
   }
 
+  const insights = data.insights ?? []
+  const recommendations = data.recommendations ?? []
+
   return (
     <Card className="p-6 border-blue-500/20 bg-blue-50/50 dark:bg-blue-900/10 transition-all hover:border-blue-500/40">
       <div className="flex items-center justify-between mb-4">
@@ -92,13 +82,13 @@ export function AssistantInsights() {
         </div>
 
         {/* Key Insights */}
-        {data.insights.length > 0 && (
+        {insights.length > 0 && (
           <div className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300 flex items-center gap-1">
               <Icon icon={Lightbulb} size={14} /> Key Takeaways
             </h3>
             <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground ml-1">
-              {data.insights.map((insight, idx) => (
+              {insights.map((insight, idx) => (
                 <li key={idx}>{insight}</li>
               ))}
             </ul>
@@ -106,13 +96,13 @@ export function AssistantInsights() {
         )}
 
         {/* Recommendations */}
-        {data.recommendations.length > 0 && (
+        {recommendations.length > 0 && (
           <div className="space-y-2 pt-2 border-t border-blue-200 dark:border-blue-800/50">
              <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300 flex items-center gap-1">
               <Icon icon={BookOpen} size={14} /> Recommended Reading
             </h3>
             <div className="grid gap-2">
-              {data.recommendations.map((rec) => (
+              {recommendations.map((rec) => (
                 <div 
                     key={rec.bibcode} 
                     className="flex flex-col gap-1 p-2 rounded bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 transition-colors cursor-pointer group"

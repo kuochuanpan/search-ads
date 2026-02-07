@@ -1036,5 +1036,18 @@ export const api = {
     }),
 
   // Assistant
-  getAssistantInsights: () => request<any>('/assistant/insights'),
+  getAssistantInsights: () => request<AssistantInsightsData>('/assistant/insights'),
+}
+
+export interface AssistantRecommendation {
+  bibcode: string
+  title: string
+  reason: string
+}
+
+export interface AssistantInsightsData {
+  last_updated: string | null
+  summary: string
+  recommendations: AssistantRecommendation[]
+  insights: string[]
 }

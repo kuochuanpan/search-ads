@@ -1,7 +1,5 @@
 #!/bin/bash
 
-#!/bin/bash
-
 # OpenClaw Skill Installer for Search-ADS
 # Usage: ./install.sh [search-ads-dir]
 

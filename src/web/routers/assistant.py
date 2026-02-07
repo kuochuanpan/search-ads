@@ -43,7 +43,21 @@ def get_assistant_insights():
 
     try:
         with open(insights_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
+
+        # Normalize/validate shape to keep the frontend stable even if the file is partial/old.
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=500, detail="Insights file must be a JSON object")
+
+        recommendations = raw.get("recommendations")
+        insights = raw.get("insights")
+
+        return {
+            "last_updated": raw.get("last_updated"),
+            "summary": raw.get("summary") or "",
+            "recommendations": recommendations if isinstance(recommendations, list) else [],
+            "insights": insights if isinstance(insights, list) else [],
+        }
     except json.JSONDecodeError:
         logger.exception("Invalid insights JSON: %s", insights_file)
         raise HTTPException(status_code=500, detail="Insights file is not valid JSON")
