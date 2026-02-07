@@ -1,7 +1,11 @@
 #!/bin/bash
 
 # OpenClaw Skill Installer for Search-ADS
-# Usage: ./install.sh [search-ads-dir]
+# Usage:
+#   ./install.sh [path-to-search-ads] [assistant-display-name]
+# Examples:
+#   ./install.sh                       # uses ~/code/search-ads and assistant name "OpenClaw"
+#   ./install.sh ~/code/search-ads Maho
 
 set -e
 
@@ -11,7 +15,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 SEARCH_ADS_DIR="${1:-$HOME/code/search-ads}"
 if [ ! -d "$SEARCH_ADS_DIR" ]; then
     echo "Error: Search-ADS directory not found at $SEARCH_ADS_DIR"
-    echo "Usage: ./install.sh [path-to-search-ads]"
+    echo "Usage: ./install.sh [path-to-search-ads] [assistant-display-name]"
     exit 1
 fi
 
@@ -49,16 +53,53 @@ ENV_DIR="$HOME/.search-ads"
 ENV_PATH="$ENV_DIR/.env"
 mkdir -p "$ENV_DIR"
 
-# Upsert helper (POSIX-ish)
+# Escape backslashes and double quotes for use in KEY="value" lines
+escape_env_value() {
+  local raw="$1"
+  raw=${raw//\\/\\\\}
+  raw=${raw//\"/\\\"}
+  # strip newlines (defensive)
+  raw=${raw//$'\n'/}
+  raw=${raw//$'\r'/}
+  printf '%s' "$raw"
+}
+
+# Upsert helper (portable: no GNU/BSD sed differences)
 upsert_env() {
   local key="$1"
   local value="$2"
-  if [ -f "$ENV_PATH" ] && grep -qE "^${key}=" "$ENV_PATH"; then
-    # macOS sed needs -i ''
-    sed -i '' -E "s|^${key}=.*$|${key}=\"${value}\"|" "$ENV_PATH"
-  else
-    echo "${key}=\"${value}\"" >> "$ENV_PATH"
+  local escaped
+  escaped="$(escape_env_value "$value")"
+
+  # If the env file does not exist yet, create it with this single entry.
+  if [ ! -f "$ENV_PATH" ]; then
+    printf '%s="%s"\n' "$key" "$escaped" > "$ENV_PATH"
+    return
   fi
+
+  local tmp_file
+  tmp_file="$(mktemp "${ENV_PATH}.XXXXXX")"
+  local replaced="false"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "${key}="*)
+        if [ "$replaced" = "false" ]; then
+          printf '%s="%s"\n' "$key" "$escaped" >> "$tmp_file"
+          replaced="true"
+        fi
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$tmp_file"
+        ;;
+    esac
+  done < "$ENV_PATH"
+
+  if [ "$replaced" = "false" ]; then
+    printf '%s="%s"\n' "$key" "$escaped" >> "$tmp_file"
+  fi
+
+  mv "$tmp_file" "$ENV_PATH"
 }
 
 upsert_env "ASSISTANT_ENABLED" "true"
@@ -67,3 +108,6 @@ upsert_env "ASSISTANT_NAME" "$ASSISTANT_NAME"
 echo "✅ Skill installed successfully!"
 echo "OpenClaw can now use 'search-ads' tools."
 echo "Assistant integration enabled for WebUI as: $ASSISTANT_NAME"
+echo
+# Note: Search-ADS settings are loaded at backend startup.
+echo "Note: if Search-ADS WebUI/backend is already running, restart it so ASSISTANT_ENABLED/ASSISTANT_NAME take effect."
