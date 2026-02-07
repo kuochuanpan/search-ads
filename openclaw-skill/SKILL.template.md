@@ -3,7 +3,7 @@
   <description>
     Interact with the Search-ADS tool to search, manage, and analyze scientific papers from NASA ADS.
     Supports semantic search, adding papers by identifier/URL, managing notes, and retrieving paper details.
-    Also provides "Maho's Insights" generation for the WebUI dashboard.
+    Also provides assistant-insights generation for the WebUI dashboard.
   </description>
   <tools>
     <tool_code>
@@ -138,7 +138,7 @@
 
     <tool_code>
       <name>search_ads_sync</name>
-      <description>Analyze recent papers in the library using AI and update Maho's Insights on the WebUI dashboard.</description>
+      <description>Analyze recent papers in the library using AI and update the assistant insights card on the WebUI dashboard.</description>
       <parameters>
         <parameter>
           <name>limit</name>

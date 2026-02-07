@@ -25,6 +25,10 @@ class MessageResponse(BaseMessageResponse):
 class SettingsResponse(BaseModel):
     """Current application settings."""
     version: str
+
+    # Assistant integration
+    assistant_enabled: bool
+    assistant_name: str
     # Data directories
     data_dir: str
     db_path: str
@@ -155,6 +159,8 @@ async def get_settings():
     """Get current application settings."""
     return SettingsResponse(
         version=settings.version,
+        assistant_enabled=bool(settings.assistant_enabled),
+        assistant_name=settings.assistant_name,
         data_dir=str(settings.data_dir),
         db_path=str(settings.db_path),
         pdfs_path=str(settings.pdfs_path),

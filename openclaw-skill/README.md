@@ -5,7 +5,7 @@ This skill integrates **Search-ADS** (your personal astrophysics library) with *
 It allows your AI agent to:
 - 🔍 **Search** for papers using natural language (`search_ads_find`).
 - 📥 **Download** PDFs and add papers to your library (`search_ads_seed`).
-- 🧠 **Analyze** recent papers and update the "Maho's Insights" dashboard on the WebUI (`search_ads_sync`).
+- 🧠 **Analyze** recent papers and update the assistant insights dashboard on the WebUI (`search_ads_sync`).
 
 ## Prerequisites
 
@@ -18,7 +18,8 @@ Run the install script from your search-ads directory:
 
 ```bash
 cd openclaw-skill
-./install.sh
+# Optional: pass your agent's display name (shown on the WebUI)
+./install.sh ~/code/search-ads "Maho"
 ```
 
 This will copy the skill definition to `~/.openclaw/workspace/skills/search-ads/`.
@@ -32,6 +33,6 @@ You can ask your agent:
 
 ## Dashboard Integration
 
-To see the "Maho's Insights" on your Search-ADS WebUI:
+To see the assistant insights card on your Search-ADS WebUI:
 1.  Ensure you have run `search_ads_sync` at least once via the agent.
 2.  The WebUI reads insights from `~/.search-ads/assistant_insights.json` by default (override with `ASSISTANT_INSIGHTS_PATH`).
