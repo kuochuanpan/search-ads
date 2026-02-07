@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Sparkles, Lightbulb, BookOpen, AlertCircle } from 'lucide-react';
+import { Sparkles, Lightbulb, BookOpen } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Icon } from '@/components/ui/Icon';
@@ -37,7 +37,7 @@ export function AssistantInsights() {
     navigate({ 
       to: '/library/$bibcode', 
       params: { bibcode },
-      state: { from: 'home' } 
+      state: ({ from: 'home' } as any),
     });
   };
 

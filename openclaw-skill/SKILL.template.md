@@ -148,7 +148,7 @@
         </parameter>
       </parameters>
       <command>
-        __SEARCH_ADS_PYTHON__ __SKILL_DIR__/scripts/sync_insights.py
+        __SEARCH_ADS_PYTHON__ __SKILL_DIR__/scripts/sync_insights.py {limit}
       </command>
     </tool_code>
   </tools>

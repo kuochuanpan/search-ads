@@ -1,9 +1,13 @@
 #!/bin/bash
 
+#!/bin/bash
+
 # OpenClaw Skill Installer for Search-ADS
 # Usage: ./install.sh [search-ads-dir]
 
 set -e
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # Detect Search-ADS directory
 SEARCH_ADS_DIR="${1:-$HOME/code/search-ads}"
@@ -27,7 +31,7 @@ mkdir -p "$TARGET_SKILL_DIR/scripts"
 echo "Installing Search-ADS Skill to: $TARGET_SKILL_DIR"
 
 # Copy scripts
-cp scripts/sync_insights.py "$TARGET_SKILL_DIR/scripts/"
+cp "$SCRIPT_DIR/scripts/sync_insights.py" "$TARGET_SKILL_DIR/scripts/"
 
 # Determine python path
 VENV_PYTHON="$SEARCH_ADS_DIR/.venv/bin/python3"
@@ -38,7 +42,7 @@ if [ ! -f "$VENV_PYTHON" ]; then
 fi
 
 # Generate SKILL.md from template
-sed "s|__SEARCH_ADS_PYTHON__|$VENV_PYTHON|g" SKILL.template.md | \
+sed "s|__SEARCH_ADS_PYTHON__|$VENV_PYTHON|g" "$SCRIPT_DIR/SKILL.template.md" | \
 sed "s|__SKILL_DIR__|$TARGET_SKILL_DIR|g" > "$TARGET_SKILL_DIR/SKILL.md"
 
 echo "✅ Skill installed successfully!"

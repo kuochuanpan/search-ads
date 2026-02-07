@@ -1,19 +1,25 @@
 import sqlite3
 import os
+import sys
 import json
 import datetime
 from pathlib import Path
+
 from dotenv import load_dotenv
 from google.genai import Client
 
 # Paths
 DB_PATH = os.path.expanduser("~/.search-ads/papers.db")
 ENV_PATH = os.path.expanduser("~/.search-ads/.env")
-INSIGHTS_PATH = os.path.expanduser("~/.openclaw/workspace/search-ads-insights.json")
+
+# Write insights next to Search-ADS data by default (aligns with backend default)
+DEFAULT_INSIGHTS_PATH = os.path.expanduser("~/.search-ads/assistant_insights.json")
+INSIGHTS_PATH = os.path.expanduser(os.getenv("ASSISTANT_INSIGHTS_PATH", DEFAULT_INSIGHTS_PATH))
 
 # Load Env
 load_dotenv(ENV_PATH)
 API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
 def fetch_recent_papers(limit=5):
     if not os.path.exists(DB_PATH):
@@ -49,10 +55,17 @@ def generate_insights(papers):
     # Prepare context for LLM
     paper_text = ""
     for p in papers:
-        paper_text += f"Title: {p['title']}\n"
-        paper_text += f"Bibcode: {p['bibcode']}\n"
-        paper_text += f"Year: {p['year']}\n"
-        paper_text += f"Abstract: {p['abstract'][:500]}...\n\n"
+        paper_text += f"Title: {p.get('title')}\n"
+        paper_text += f"Bibcode: {p.get('bibcode')}\n"
+        paper_text += f"Year: {p.get('year')}\n"
+
+        abstract = p.get('abstract')
+        if isinstance(abstract, str) and abstract.strip():
+            abstract_snippet = abstract[:500]
+        else:
+            abstract_snippet = "(no abstract available)"
+
+        paper_text += f"Abstract: {abstract_snippet}...\n\n"
 
     prompt = f"""
     You are an expert astrophysics research assistant named "Maho". 
@@ -84,11 +97,11 @@ def generate_insights(papers):
     try:
         client = Client(api_key=API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL,
             contents=prompt,
             config={
-                'response_mime_type': 'application/json'
-            }
+                "response_mime_type": "application/json",
+            },
         )
         return json.loads(response.text)
     except Exception as e:
@@ -96,9 +109,17 @@ def generate_insights(papers):
         return None
 
 def main():
-    print(f"--- Maho's Insight Generator ---")
-    
-    papers = fetch_recent_papers(limit=5)
+    print("--- Maho's Insight Generator ---")
+
+    # Optional: pass limit as first CLI arg
+    limit = 5
+    if len(sys.argv) > 1:
+        try:
+            limit = int(sys.argv[1])
+        except ValueError:
+            print(f"Warning: invalid limit '{sys.argv[1]}', using default 5")
+
+    papers = fetch_recent_papers(limit=limit)
     if not papers:
         print("No papers found.")
         return
@@ -109,10 +130,12 @@ def main():
     if insights_data:
         # Add timestamp
         insights_data["last_updated"] = datetime.datetime.now().isoformat()
-        
-        # Save
-        with open(INSIGHTS_PATH, "w") as f:
-            json.dump(insights_data, f, indent=2)
+
+        # Save (ensure parent exists)
+        out_path = Path(INSIGHTS_PATH)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(insights_data, f, indent=2, ensure_ascii=False)
         print(f"✅ Insights updated at: {INSIGHTS_PATH}")
         print("Summary:", insights_data["summary"])
     else:

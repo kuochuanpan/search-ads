@@ -45,10 +45,6 @@ app.include_router(latex.router, prefix="/api/latex", tags=["LaTeX"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["Assistant"])
 
 
-@app.on_event("startup")
-async def startup_event():
-    pass
-
 @app.get("/")
 async def root():
     """Root endpoint - API info."""
