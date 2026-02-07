@@ -1034,4 +1034,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ bibcodes, format }),
     }),
+
+  // Assistant
+  getAssistantInsights: () => request<any>('/assistant/insights'),
 }
