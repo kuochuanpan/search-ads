@@ -247,6 +247,8 @@ export function PaperDetailPage() {
           const from = (location.state as any)?.from
           if (from === 'library' || from === 'search') {
             router.history.back()
+          } else if (from === 'home') {
+            navigate({ to: '/' })
           } else {
             navigate({ to: '/library' })
           }
@@ -254,7 +256,11 @@ export function PaperDetailPage() {
         className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
       >
         <Icon icon={ArrowLeft} size={18} />
-        {(location.state as any)?.from === 'search' ? 'Back to Search Results' : 'Back to Library'}
+        {(location.state as any)?.from === 'search' 
+          ? 'Back to Search Results' 
+          : (location.state as any)?.from === 'home'
+            ? 'Back to Home'
+            : 'Back to Library'}
       </button>
 
       {/* Title and metadata */}

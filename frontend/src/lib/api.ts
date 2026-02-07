@@ -1034,4 +1034,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ bibcodes, format }),
     }),
+
+  // Assistant
+  getAssistantInsights: () => request<AssistantInsightsData>('/assistant/insights'),
+}
+
+export interface AssistantRecommendation {
+  bibcode: string
+  title: string
+  reason: string
+}
+
+export interface AssistantInsightsData {
+  last_updated: string | null
+  summary: string
+  recommendations: AssistantRecommendation[]
+  insights: string[]
 }

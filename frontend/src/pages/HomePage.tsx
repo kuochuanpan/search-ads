@@ -4,6 +4,7 @@ import { BookOpen, Search, Star, FileText, Network, TrendingUp, AlertCircle } fr
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Icon } from '@/components/ui/Icon'
+import { AssistantInsights } from '@/components/AssistantInsights'
 import { useStats } from '@/hooks/useStats'
 import { usePapers } from '@/hooks/usePapers'
 import { api } from '@/lib/api'
@@ -35,6 +36,9 @@ export function HomePage() {
           {stats?.total_projects ? ` across ${stats.total_projects} projects` : ''}.
         </h1>
       </div>
+
+      {/* AI Assistant */}
+      <AssistantInsights />
 
       {/* Missing Keys Warning */}
       {settings && !settings.has_ads_key && (
