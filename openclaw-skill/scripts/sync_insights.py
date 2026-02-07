@@ -12,12 +12,15 @@ from google.genai import Client
 DB_PATH = os.path.expanduser("~/.search-ads/papers.db")
 ENV_PATH = os.path.expanduser("~/.search-ads/.env")
 
+# Load Env (so we can read config from ~/.search-ads/.env)
+load_dotenv(ENV_PATH)
+
+ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "OpenClaw")
+
 # Write insights next to Search-ADS data by default (aligns with backend default)
 DEFAULT_INSIGHTS_PATH = os.path.expanduser("~/.search-ads/assistant_insights.json")
 INSIGHTS_PATH = os.path.expanduser(os.getenv("ASSISTANT_INSIGHTS_PATH", DEFAULT_INSIGHTS_PATH))
 
-# Load Env
-load_dotenv(ENV_PATH)
 API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
@@ -68,7 +71,7 @@ def generate_insights(papers):
         paper_text += f"Abstract: {abstract_snippet}...\n\n"
 
     prompt = f"""
-    You are an expert astrophysics research assistant named "Maho". 
+    You are an expert astrophysics research assistant named \"{ASSISTANT_NAME}\".
     Analyze these {len(papers)} recent papers from the user's library.
     
     Papers:
@@ -109,7 +112,7 @@ def generate_insights(papers):
         return None
 
 def main():
-    print("--- Maho's Insight Generator ---")
+    print(f"--- {ASSISTANT_NAME}'s Insight Generator ---")
 
     # Optional: pass limit as first CLI arg
     limit = 5

@@ -31,6 +31,11 @@ def _insights_path() -> Path:
 
 @router.get("/insights")
 def get_assistant_insights():
+    # If the user doesn't have OpenClaw/assistant integration enabled,
+    # don't expose assistant content (frontend should hide the card).
+    if not settings.assistant_enabled:
+        raise HTTPException(status_code=404, detail="Assistant integration not enabled")
+
     insights_file = _insights_path()
 
     if not insights_file.exists():

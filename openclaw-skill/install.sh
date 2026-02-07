@@ -43,5 +43,27 @@ fi
 sed "s|__SEARCH_ADS_PYTHON__|$VENV_PYTHON|g" "$SCRIPT_DIR/SKILL.template.md" | \
 sed "s|__SKILL_DIR__|$TARGET_SKILL_DIR|g" > "$TARGET_SKILL_DIR/SKILL.md"
 
+# Enable assistant integration in Search-ADS (WebUI)
+ASSISTANT_NAME="${2:-OpenClaw}"
+ENV_DIR="$HOME/.search-ads"
+ENV_PATH="$ENV_DIR/.env"
+mkdir -p "$ENV_DIR"
+
+# Upsert helper (POSIX-ish)
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  if [ -f "$ENV_PATH" ] && grep -qE "^${key}=" "$ENV_PATH"; then
+    # macOS sed needs -i ''
+    sed -i '' -E "s|^${key}=.*$|${key}=\"${value}\"|" "$ENV_PATH"
+  else
+    echo "${key}=\"${value}\"" >> "$ENV_PATH"
+  fi
+}
+
+upsert_env "ASSISTANT_ENABLED" "true"
+upsert_env "ASSISTANT_NAME" "$ASSISTANT_NAME"
+
 echo "✅ Skill installed successfully!"
 echo "OpenClaw can now use 'search-ads' tools."
+echo "Assistant integration enabled for WebUI as: $ASSISTANT_NAME"

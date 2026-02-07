@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # Data directories
     data_dir: Path = Field(default=Path.home() / ".search-ads")
 
+    # OpenClaw / Assistant integration
+    # If false, the WebUI should not show assistant-specific UI elements.
+    assistant_enabled: bool = Field(default=False, alias="ASSISTANT_ENABLED")
+    # Display name for the assistant (e.g., "Maho", "OpenClaw", etc.)
+    assistant_name: str = Field(default="OpenClaw", alias="ASSISTANT_NAME")
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "papers.db"
