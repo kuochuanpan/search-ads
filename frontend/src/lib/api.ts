@@ -99,6 +99,8 @@ export interface ApiUsageResponse {
 
 export interface SettingsResponse {
   version: string
+  assistant_enabled: boolean
+  assistant_name: string
   data_dir: string
   db_path: string
   pdfs_path: string

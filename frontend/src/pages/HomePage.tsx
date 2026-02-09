@@ -37,8 +37,10 @@ export function HomePage() {
         </h1>
       </div>
 
-      {/* AI Assistant */}
-      <AssistantInsights />
+      {/* AI Assistant (OpenClaw integration only) */}
+      {settings?.assistant_enabled && (
+        <AssistantInsights assistantName={settings.assistant_name} />
+      )}
 
       {/* Missing Keys Warning */}
       {settings && !settings.has_ads_key && (

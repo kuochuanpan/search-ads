@@ -11,7 +11,7 @@ async function fetchInsights(): Promise<AssistantInsightsData> {
   return api.getAssistantInsights()
 }
 
-export function AssistantInsights() {
+export function AssistantInsights({ assistantName = 'OpenClaw' }: { assistantName?: string }) {
   const navigate = useNavigate();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['assistant-insights'],
@@ -49,9 +49,9 @@ export function AssistantInsights() {
                 <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                     <Icon icon={Sparkles} size={24} />
                 </div>
-                <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">Maho's Insights</h2>
+                <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">{assistantName}'s Insights</h2>
             </div>
-            <p className="text-muted-foreground text-sm">No insights generated yet. Ask me to sync!</p>
+            <p className="text-muted-foreground text-sm">No insights generated yet. Ask {assistantName} to sync!</p>
         </Card>
     )
   }
@@ -67,7 +67,7 @@ export function AssistantInsights() {
             <Icon icon={Sparkles} size={24} />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">Maho's Insights</h2>
+            <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">{assistantName}'s Insights</h2>
             <p className="text-xs text-blue-700/60 dark:text-blue-300/60">
               Updated: {new Date(data.last_updated).toLocaleString()}
             </p>
