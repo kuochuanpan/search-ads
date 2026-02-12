@@ -141,9 +141,9 @@ class VectorStore:
 
             elif provider == "gemini":
                 if settings.gemini_api_key:
-                    model_name = getattr(settings, "embedding_model", "models/text-embedding-004")
+                    model_name = getattr(settings, "embedding_model", "models/gemini-embedding-001")
                     if not model_name or model_name == "openai": # fallback
-                         model_name = "models/text-embedding-004"
+                         model_name = "models/gemini-embedding-001"
                     
                     self._embedding_function = GoogleGeminiEmbeddingFunction(
                         api_key=settings.gemini_api_key,
