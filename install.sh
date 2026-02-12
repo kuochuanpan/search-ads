@@ -16,8 +16,21 @@ check_command() {
 
 echo "Checking dependencies..."
 check_command git
-check_command pipx
 check_command npm
+
+# Detect package installer: prefer uv, fall back to pipx
+if command -v uv &> /dev/null; then
+    PKG_INSTALLER="uv"
+    echo "Using uv as package installer."
+elif command -v pipx &> /dev/null; then
+    PKG_INSTALLER="pipx"
+    echo "Using pipx as package installer."
+else
+    echo "Error: Neither uv nor pipx found. Please install one of them first."
+    echo "  uv:   curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "  pipx: python3 -m pip install --user pipx"
+    exit 1
+fi
 
 echo "Installing Search-ADS..."
 
@@ -42,7 +55,11 @@ cd "$INSTALL_DIR"
 chmod +x launch.sh
 
 echo "Installing backend (CLI)..."
-pipx install . --force
+if [ "$PKG_INSTALLER" = "uv" ]; then
+    uv tool install . --force
+else
+    pipx install . --force
+fi
 
 echo "Installing frontend dependencies..."
 cd frontend

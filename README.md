@@ -49,8 +49,8 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 ## Requirements
 
 **For CLI only:**
-- Python 3.10+
-- pipx (recommended) or pip
+- Python 3.10 – 3.13 (Python 3.14 is **not** supported yet due to ChromaDB incompatibility)
+- uv (recommended), pipx, or pip
 - NASA ADS API key (free)
 
 **For full installation (CLI + Web UI):**
@@ -71,7 +71,7 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 If you want both the CLI and Web UI:
 
 ```bash
-# Requires: git, pipx, npm
+# Requires: git, uv or pipx, npm
 curl -fsSL https://raw.githubusercontent.com/kuochuanpan/search-ads/main/install.sh | bash
 ```
 
@@ -96,12 +96,24 @@ cd ~/search-ads && ./launch.sh
 If you only need the command-line tool:
 
 ```bash
-# Using pipx (recommended)
+# Using uv (recommended)
+uv tool install git+https://github.com/kuochuanpan/search-ads.git
+
+# Using pipx
 pipx install git+https://github.com/kuochuanpan/search-ads.git
 
 # Or using pip
 pip install git+https://github.com/kuochuanpan/search-ads.git
 ```
+
+### Development Installation (from source)
+
+```bash
+git clone https://github.com/kuochuanpan/search-ads.git && cd search-ads
+uv venv --python python3.13 && source .venv/bin/activate && uv pip install -e ".[dev]"
+```
+
+> **⚠️ Python 3.14 is not supported** due to ChromaDB incompatibility. Use Python 3.13 or earlier.
 
 Then initialize:
 
@@ -160,6 +172,10 @@ cd ~/search-ads
 
 **CLI only:**
 ```bash
+# If installed with uv
+uv tool upgrade search-ads
+
+# If installed with pipx
 pipx upgrade search-ads
 ```
 
