@@ -1,6 +1,6 @@
 # Search-ADS
 
-![Version](https://img.shields.io/badge/version-0.9.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.9.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![Tauri](https://img.shields.io/badge/tauri-v2-orange)
@@ -10,7 +10,7 @@
 
 Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search and LLM-powered analysis to make managing your research library effortless.
 
-**Version: 0.9.0-beta**
+**Version: 0.9.1**
 
 ## Screenshots
 
@@ -273,25 +273,36 @@ cd ~/search-ads
 
 ### macOS Native App
 
-Search-ADS usually runs as a web application, but you can also build a native macOS application using Tauri.
+Search-ADS is also available as a standalone macOS desktop application.
 
-**Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases)
+**Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases) — grab the `.dmg` file for your architecture (Apple Silicon / Intel).
 
-**Prerequisites:**
-- Rust and Cargo (install via [rustup.rs](https://rustup.rs))
-- Node.js and npm
+**Install from DMG:**
+1. Download `Search-ADS_<version>_aarch64.dmg` (Apple Silicon) from Releases
+2. Open the DMG and drag **Search-ADS** to **Applications**
+3. On first launch, right-click the app → **Open** (required for unsigned apps)
+   - macOS may show "Apple cannot check it for malicious software" — click **Open** to proceed
+   - This is only needed once; subsequent launches work normally
 
-**Build Instructions:**
+> **Note:** The app is not currently code-signed with an Apple Developer ID. This is safe — you can verify the source code and build it yourself if preferred.
+
+**Build from Source:**
+
+Prerequisites: Rust/Cargo ([rustup.rs](https://rustup.rs)), Node.js, npm, Python 3.13
 
 ```bash
-# 1. Build the Python sidecar (backend)
+# 1. Install Python dependencies
+uv venv --python python3.13 && source .venv/bin/activate
+uv pip install -e . && pip install pyinstaller
+
+# 2. Build the Python sidecar (backend)
 ./scripts/build-sidecar.sh
 
-# 2. Build the macOS application
+# 3. Build the macOS application
 cargo tauri build
 ```
 
-The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app`.
+The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app` and a DMG at `src-tauri/target/release/bundle/dmg/`.
 
 This starts both backend and frontend. Press `Ctrl+C` to stop.
 
