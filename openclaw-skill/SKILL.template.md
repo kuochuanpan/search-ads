@@ -8,29 +8,47 @@
   <tools>
     <tool_code>
       <name>search_ads_find</name>
-      <description>Search for papers in the library or online using natural language context.</description>
+      <description>Search for papers in the library or online using natural language context. Supports author and year filters.</description>
       <parameters>
         <parameter>
           <name>context</name>
           <type>string</type>
-          <description>The search query or context (e.g., "papers about M1 closure in CCSN").</description>
-          <required>true</required>
+          <description>The search query or context (e.g., "papers about M1 closure in CCSN"). Optional if author or year is provided.</description>
+          <required>false</required>
         </parameter>
         <parameter>
-          <name>limit</name>
+          <name>author</name>
+          <type>string</type>
+          <description>Filter by author name (e.g., "Pan").</description>
+          <required>false</required>
+        </parameter>
+        <parameter>
+          <name>year</name>
+          <type>string</type>
+          <description>Filter by year (e.g., "2020" or "2018-2022").</description>
+          <required>false</required>
+        </parameter>
+        <parameter>
+          <name>top_k</name>
           <type>integer</type>
-          <description>Maximum number of results to return (default: 5).</description>
+          <description>Number of results to return (default: 5).</description>
           <required>false</required>
         </parameter>
         <parameter>
           <name>local_only</name>
           <type>boolean</type>
-          <description>If true, search only the local database. If false (default), may search online ADS.</description>
+          <description>If true, search only the local database (no ADS API calls).</description>
+          <required>false</required>
+        </parameter>
+        <parameter>
+          <name>no_llm</name>
+          <type>boolean</type>
+          <description>If true, disable LLM-based analysis and ranking.</description>
           <required>false</required>
         </parameter>
       </parameters>
       <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main find --context "{context}" --top-k {limit} {?local_only:--local}
+        __SEARCH_ADS_PYTHON__ -m src.cli.main find {?context:-c "{context}"} {?author:-a "{author}"} {?year:-y "{year}"} {?top_k:-k {top_k}} {?local_only:--local} {?no_llm:--no-llm}
       </command>
     </tool_code>
 
@@ -57,13 +75,29 @@
     </tool_code>
 
     <tool_code>
-      <name>search_ads_show</name>
-      <description>Show detailed information about a paper, including abstract.</description>
+      <name>search_ads_expand</name>
+      <description>Expand the citation graph for a paper (discover references and citing papers).</description>
       <parameters>
         <parameter>
           <name>identifier</name>
           <type>string</type>
-          <description>The paper identifier (Bibcode) or search query to find it.</description>
+          <description>The paper identifier (Bibcode). If omitted, expands all papers.</description>
+          <required>false</required>
+        </parameter>
+      </parameters>
+      <command>
+        __SEARCH_ADS_PYTHON__ -m src.cli.main expand {?identifier:"{identifier}"}
+      </command>
+    </tool_code>
+
+    <tool_code>
+      <name>search_ads_show</name>
+      <description>Show detailed information about a paper, including abstract, citation count, and notes.</description>
+      <parameters>
+        <parameter>
+          <name>identifier</name>
+          <type>string</type>
+          <description>The paper identifier (Bibcode).</description>
           <required>true</required>
         </parameter>
       </parameters>
@@ -79,27 +113,27 @@
         <parameter>
           <name>limit</name>
           <type>integer</type>
-          <description>Number of papers to list (default: 10).</description>
+          <description>Number of papers to list (default: 20).</description>
           <required>false</required>
         </parameter>
         <parameter>
-          <name>sort_by</name>
+          <name>project</name>
           <type>string</type>
-          <description>Sort order: 'date', 'citations', 'added' (default: 'added').</description>
+          <description>Filter by project name.</description>
           <required>false</required>
         </parameter>
       </parameters>
       <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main list-papers --limit {limit} --sort {sort_by}
+        __SEARCH_ADS_PYTHON__ -m src.cli.main list-papers {?limit:-n {limit}} {?project:-p "{project}"}
       </command>
     </tool_code>
 
     <tool_code>
       <name>search_ads_note</name>
-      <description>Add or view notes for a specific paper.</description>
+      <description>Add or view notes for a specific paper. With content, adds/appends a note. Without content, shows existing note.</description>
       <parameters>
         <parameter>
-          <name>identifier</name>
+          <name>bibcode</name>
           <type>string</type>
           <description>The paper identifier (Bibcode).</description>
           <required>true</required>
@@ -107,16 +141,28 @@
         <parameter>
           <name>content</name>
           <type>string</type>
-          <description>The note content to add. If omitted, lists existing notes.</description>
+          <description>The note content to add/append. If omitted, displays existing note.</description>
           <required>false</required>
         </parameter>
       </parameters>
       <command>
-        if [ -n "{content}" ]; then
-          __SEARCH_ADS_PYTHON__ -m src.cli.main note add "{identifier}" "{content}"
-        else
-          __SEARCH_ADS_PYTHON__ -m src.cli.main note list "{identifier}"
-        fi
+        __SEARCH_ADS_PYTHON__ -m src.cli.main note "{bibcode}" {?content:--add "{content}"}
+      </command>
+    </tool_code>
+
+    <tool_code>
+      <name>search_ads_get</name>
+      <description>Get citation information for a paper (cite key, bibitem, bibtex).</description>
+      <parameters>
+        <parameter>
+          <name>identifier</name>
+          <type>string</type>
+          <description>The paper identifier (Bibcode).</description>
+          <required>true</required>
+        </parameter>
+      </parameters>
+      <command>
+        __SEARCH_ADS_PYTHON__ -m src.cli.main get "{identifier}"
       </command>
     </tool_code>
     
@@ -133,6 +179,15 @@
       </parameters>
       <command>
         __SEARCH_ADS_PYTHON__ -m src.cli.main pdf download "{identifier}"
+      </command>
+    </tool_code>
+
+    <tool_code>
+      <name>search_ads_status</name>
+      <description>Show database and API usage status.</description>
+      <parameters />
+      <command>
+        __SEARCH_ADS_PYTHON__ -m src.cli.main status
       </command>
     </tool_code>
 
