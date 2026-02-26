@@ -1,6 +1,6 @@
 ---
 name: cli-commands
-description: Complete reference for all search-ads CLI commands, options, and usage patterns
+description: "Complete reference for all search-ads CLI commands, options, and usage patterns. Use when: implementing or modifying CLI commands, checking command syntax/flags, or debugging CLI behavior. NOT for: web API endpoints (use web-api) or project architecture (use project-overview)."
 version: 1.0.0
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: web-api
-description: FastAPI web server endpoints and React frontend architecture for search-ads
+description: "FastAPI web server endpoints and React frontend architecture for search-ads. Use when: modifying API routes, adding frontend features, debugging web UI issues, or understanding the client-server data flow. NOT for: CLI commands (use cli-commands) or project architecture overview (use project-overview)."
 version: 1.0.0
 ---
 

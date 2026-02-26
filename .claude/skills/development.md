@@ -1,6 +1,6 @@
 ---
 name: development
-description: Development workflows, testing, building, and contributing to search-ads
+description: "Development workflows, testing, building, and contributing to search-ads. Use when: running tests, building releases, setting up dev environment, or making code contributions. NOT for: CLI usage (use cli-commands) or API details (use web-api)."
 version: 1.0.0
 ---
 
