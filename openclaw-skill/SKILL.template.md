@@ -1,210 +1,171 @@
-<skill_schema>
-  <name>search-ads</name>
-  <description>
-    Interact with the Search-ADS tool to search, manage, and analyze scientific papers from NASA ADS.
-    Supports semantic search, adding papers by identifier/URL, managing notes, and retrieving paper details.
-    Also provides assistant-insights generation for the WebUI dashboard.
-  </description>
-  <tools>
-    <tool_code>
-      <name>search_ads_find</name>
-      <description>Search for papers in the library or online using natural language context. Supports author and year filters.</description>
-      <parameters>
-        <parameter>
-          <name>context</name>
-          <type>string</type>
-          <description>The search query or context (e.g., "papers about M1 closure in CCSN"). Optional if author or year is provided.</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>author</name>
-          <type>string</type>
-          <description>Filter by author name (e.g., "Pan").</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>year</name>
-          <type>string</type>
-          <description>Filter by year (e.g., "2020" or "2018-2022").</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>top_k</name>
-          <type>integer</type>
-          <description>Number of results to return (default: 5).</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>local_only</name>
-          <type>boolean</type>
-          <description>If true, search only the local database (no ADS API calls).</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>no_llm</name>
-          <type>boolean</type>
-          <description>If true, disable LLM-based analysis and ranking.</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main find {?context:-c "{context}"} {?author:-a "{author}"} {?year:-y "{year}"} {?top_k:-k {top_k}} {?local_only:--local} {?no_llm:--no-llm}
-      </command>
-    </tool_code>
+---
+name: search-ads
+description: "Search, manage, and analyze scientific papers from NASA ADS. Use when: user asks to find papers, search literature, add a paper by bibcode/arXiv/DOI, show paper details, manage reading notes, list library contents, expand citation graphs, get BibTeX, download PDFs, or update the assistant insights dashboard. NOT for: general web search, non-academic literature, or tasks unrelated to scientific papers."
+metadata:
+  author: Kuo-Chuan Pan
+  version: 0.9.0-beta
+  homepage: https://github.com/kuochuanpan/search-ads
+  openclaw:
+    emoji: "🔭"
+    requires:
+      bins: ["python3"]
+---
 
-    <tool_code>
-      <name>search_ads_seed</name>
-      <description>Add a paper to the local library from NASA ADS by identifier or URL.</description>
-      <parameters>
-        <parameter>
-          <name>identifier</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode, arXiv ID, DOI) or ADS URL.</description>
-          <required>true</required>
-        </parameter>
-        <parameter>
-          <name>project</name>
-          <type>string</type>
-          <description>Optional project name to tag the paper with.</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main seed "{identifier}" {?project:--project "{project}"}
-      </command>
-    </tool_code>
+# Search-ADS Skill
 
-    <tool_code>
-      <name>search_ads_expand</name>
-      <description>Expand the citation graph for a paper (discover references and citing papers).</description>
-      <parameters>
-        <parameter>
-          <name>identifier</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode). If omitted, expands all papers.</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main expand {?identifier:"{identifier}"}
-      </command>
-    </tool_code>
+Interact with the Search-ADS tool to search, manage, and analyze scientific papers from NASA ADS. Supports semantic search, adding papers by identifier/URL, managing notes, and retrieving paper details.
 
-    <tool_code>
-      <name>search_ads_show</name>
-      <description>Show detailed information about a paper, including abstract, citation count, and notes.</description>
-      <parameters>
-        <parameter>
-          <name>identifier</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode).</description>
-          <required>true</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main show "{identifier}"
-      </command>
-    </tool_code>
+## When to Use
 
-    <tool_code>
-      <name>search_ads_list</name>
-      <description>List papers in the local library.</description>
-      <parameters>
-        <parameter>
-          <name>limit</name>
-          <type>integer</type>
-          <description>Number of papers to list (default: 20).</description>
-          <required>false</required>
-        </parameter>
-        <parameter>
-          <name>project</name>
-          <type>string</type>
-          <description>Filter by project name.</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main list-papers {?limit:-n {limit}} {?project:-p "{project}"}
-      </command>
-    </tool_code>
+✅ **USE this skill when:**
 
-    <tool_code>
-      <name>search_ads_note</name>
-      <description>Add or view notes for a specific paper. With content, adds/appends a note. Without content, shows existing note.</description>
-      <parameters>
-        <parameter>
-          <name>bibcode</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode).</description>
-          <required>true</required>
-        </parameter>
-        <parameter>
-          <name>content</name>
-          <type>string</type>
-          <description>The note content to add/append. If omitted, displays existing note.</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main note "{bibcode}" {?content:--add "{content}"}
-      </command>
-    </tool_code>
+- "Find papers about [topic]" / "Search for [author]'s papers"
+- "Add this paper: [bibcode/arXiv ID/DOI/URL]"
+- "Show me details of [paper]"
+- "What papers do I have about [topic]?"
+- "Get the BibTeX for [paper]"
+- "Download the PDF for [paper]"
+- "Expand citations for [paper]"
+- "Add a note to [paper]"
+- "Update my dashboard insights"
 
-    <tool_code>
-      <name>search_ads_get</name>
-      <description>Get citation information for a paper (cite key, bibitem, bibtex).</description>
-      <parameters>
-        <parameter>
-          <name>identifier</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode).</description>
-          <required>true</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main get "{identifier}"
-      </command>
-    </tool_code>
-    
-    <tool_code>
-      <name>search_ads_pdf_download</name>
-      <description>Download the PDF for a paper.</description>
-      <parameters>
-        <parameter>
-          <name>identifier</name>
-          <type>string</type>
-          <description>The paper identifier (Bibcode).</description>
-          <required>true</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main pdf download "{identifier}"
-      </command>
-    </tool_code>
+❌ **DON'T use this skill when:**
 
-    <tool_code>
-      <name>search_ads_status</name>
-      <description>Show database and API usage status.</description>
-      <parameters />
-      <command>
-        __SEARCH_ADS_PYTHON__ -m src.cli.main status
-      </command>
-    </tool_code>
+- General web search (use web_search)
+- Non-academic content
+- Tasks unrelated to scientific literature
 
-    <tool_code>
-      <name>search_ads_sync</name>
-      <description>Analyze recent papers in the library using AI and update the assistant insights card on the WebUI dashboard.</description>
-      <parameters>
-        <parameter>
-          <name>limit</name>
-          <type>integer</type>
-          <description>Number of recent papers to analyze (default: 5).</description>
-          <required>false</required>
-        </parameter>
-      </parameters>
-      <command>
-        __SEARCH_ADS_PYTHON__ __SKILL_DIR__/scripts/sync_insights.py {limit}
-      </command>
-    </tool_code>
-  </tools>
-</skill_schema>
+## Tools
+
+### search_ads_find
+
+Search for papers in the library or online using natural language.
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main find \
+  -c "CONTEXT" \       # search query (e.g., "M1 closure in CCSN")
+  -a "AUTHOR" \        # filter by author (e.g., "Pan")
+  -y "YEAR" \          # filter by year (e.g., "2020" or "2018-2022")
+  -k TOP_K \           # number of results (default: 5)
+  --local \            # search local DB only (no ADS API)
+  --no-llm             # disable LLM ranking
+```
+
+All parameters optional. At least one of context/author/year should be provided.
+
+### search_ads_seed
+
+Add a paper to the local library by identifier.
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main seed "IDENTIFIER" \
+  --project "PROJECT"  # optional project tag
+```
+
+IDENTIFIER: Bibcode, arXiv ID, DOI, or ADS URL.
+
+### search_ads_expand
+
+Expand the citation graph (discover references and citing papers).
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main expand "BIBCODE"
+```
+
+Omit BIBCODE to expand all papers.
+
+### search_ads_show
+
+Show detailed paper info (abstract, citations, notes).
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main show "BIBCODE"
+```
+
+### search_ads_list
+
+List papers in the local library.
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main list-papers \
+  -n LIMIT \           # number of papers (default: 20)
+  -p "PROJECT"         # filter by project
+```
+
+### search_ads_note
+
+Add or view notes for a paper.
+
+```bash
+# View existing note
+__SEARCH_ADS_PYTHON__ -m src.cli.main note "BIBCODE"
+
+# Add/append note
+__SEARCH_ADS_PYTHON__ -m src.cli.main note "BIBCODE" --add "NOTE CONTENT"
+```
+
+### search_ads_get
+
+Get citation info (cite key, bibitem, bibtex).
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main get "BIBCODE"
+```
+
+### search_ads_pdf_download
+
+Download a paper's PDF.
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main pdf download "BIBCODE"
+```
+
+### search_ads_status
+
+Show database and API usage status.
+
+```bash
+__SEARCH_ADS_PYTHON__ -m src.cli.main status
+```
+
+### search_ads_sync
+
+Analyze recent papers and update the assistant insights dashboard on the WebUI.
+
+```bash
+__SEARCH_ADS_PYTHON__ __SKILL_DIR__/scripts/sync_insights.py LIMIT
+```
+
+LIMIT: number of recent papers to analyze (default: 5).
+
+## Examples
+
+**Example 1: Literature search**
+User says: "Find recent papers about neutrino transport in core-collapse supernovae"
+Action: `search_ads_find -c "neutrino transport in core-collapse supernovae" -y "2020-2025"`
+
+**Example 2: Add a paper**
+User says: "Add this paper: 2024ApJ...123..456P"
+Action: `search_ads_seed "2024ApJ...123..456P"`
+
+**Example 3: Research workflow**
+User says: "Show me Pan's recent papers and add any about nuclear EOS to my library"
+Actions:
+1. `search_ads_find -a "Pan" -y "2023-2025"` — find papers
+2. Review results, identify relevant ones
+3. `search_ads_seed "BIBCODE"` — add each relevant paper
+4. `search_ads_note "BIBCODE" --add "Relevant to nuclear EOS project"` — annotate
+
+## Troubleshooting
+
+**Error: Command not found or venv issue**
+- Verify Search-ADS is installed and the virtual environment exists
+- Re-run installer: `cd openclaw-skill && ./install.sh`
+
+**Error: ADS API rate limit**
+- Use `--local` flag to search local DB only
+- Check status: `search_ads_status`
+
+**Error: Paper not found**
+- Try different identifier formats (Bibcode vs arXiv ID vs DOI)
+- Check ADS directly: `https://ui.adsabs.harvard.edu/search/`
