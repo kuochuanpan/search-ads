@@ -13,6 +13,19 @@ AI-powered reference manager for astronomers. CLI + Web UI + Desktop app for fin
 - **Web API:** `src/web/main.py` (FastAPI) + `src/web/routers/`
 - **Frontend:** `frontend/` (React 18 + TypeScript + Vite + Tailwind)
 - **Desktop:** `src-tauri/` (Tauri v2)
+- **OpenClaw skill:** `openclaw-skill/` (agent integration for OpenClaw)
+
+## Skills
+
+Detailed knowledge is organized in `.claude/skills/`:
+
+| Skill | When to use |
+|-------|-------------|
+| `project-overview` | Architecture, code layout, DB models, config vars |
+| `cli-commands` | CLI command syntax, flags, usage patterns |
+| `web-api` | API routes, frontend features, client-server flow |
+| `development` | Testing, building, dev environment, contributing |
+| `search-cite` | LaTeX citation filling, `\cite{}` workflows |
 
 ## Build & Run
 

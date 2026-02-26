@@ -1,6 +1,6 @@
 ---
 name: search-cite
-description: Search for scientific paper citations using NASA ADS and fill empty \cite{} in LaTeX
+description: "Search for scientific paper citations using NASA ADS and fill empty \\cite{} in LaTeX. Use when: user asks to fill citations in a .tex file, find bibcodes for references, or manage LaTeX bibliography. NOT for: general paper search (use cli-commands) or non-LaTeX workflows."
 version: 1.0.0
 ---
 
