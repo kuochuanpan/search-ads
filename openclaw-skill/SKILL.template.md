@@ -55,14 +55,18 @@ All parameters optional. At least one of context/author/year should be provided.
 
 ### search_ads_seed
 
-Add a paper to the local library by identifier.
+Add a paper to the local library by identifier. By default adds **only that one paper**.
 
 ```bash
 __SEARCH_ADS_PYTHON__ -m src.cli.main seed "IDENTIFIER" \
   --project "PROJECT"  # optional project tag
+  -e                   # also fetch references & citations (1 hop)
+  -h HOPS              # number of hops for expansion (default: 1)
 ```
 
 IDENTIFIER: Bibcode, arXiv ID, DOI, or ADS URL.
+
+**Note:** Without `-e`, only the specified paper is added. Use `-e` to also discover and add its references and citations (can add many papers).
 
 ### search_ads_expand
 
