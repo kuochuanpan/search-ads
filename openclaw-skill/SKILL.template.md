@@ -154,7 +154,7 @@ Actions:
 1. `search_ads_find -a "Pan" -y "2023-2025"` — find papers
 2. Review results, identify relevant ones
 3. `search_ads_seed "BIBCODE"` — add each relevant paper
-4. `search_ads_note "BIBCODE" --add "Relevant to nuclear EOS project"` — annotate
+4. `search_ads_note "BIBCODE" --add "Relevant to nuclear EOS project"` — add note
 
 ## Troubleshooting
 

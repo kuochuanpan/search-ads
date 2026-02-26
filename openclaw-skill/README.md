@@ -9,7 +9,7 @@ Your AI agent can:
 - 📥 **Add** papers to your library by Bibcode, arXiv ID, DOI, or URL
 - 📖 **Show** paper details (abstract, citations, notes)
 - 🌐 **Expand** citation graphs to discover related work
-- 📝 **Annotate** papers with reading notes
+- 📝 **Add notes** to papers
 - 📄 **Get** BibTeX and citation info
 - 📥 **Download** PDFs
 - 📊 **Sync** assistant insights to the WebUI dashboard
