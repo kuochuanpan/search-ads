@@ -1,6 +1,6 @@
 ---
 name: project-overview
-description: Overview of the search-ads project architecture and codebase
+description: "Overview of the search-ads project architecture and codebase. Use when: understanding project structure, finding where code lives, checking database models, configuration variables, or dependency info. NOT for: specific CLI command syntax (use cli-commands) or API endpoint details (use web-api)."
 version: 1.0.0
 ---
 

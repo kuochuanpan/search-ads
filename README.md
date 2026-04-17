@@ -49,8 +49,8 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 ## Requirements
 
 **For CLI only:**
-- Python 3.10+
-- pipx (recommended) or pip
+- Python 3.10 – 3.13 (Python 3.14 is **not** supported yet due to ChromaDB incompatibility)
+- uv (recommended), pipx, or pip
 - NASA ADS API key (free)
 
 **For full installation (CLI + Web UI):**
@@ -71,7 +71,7 @@ Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (
 If you want both the CLI and Web UI:
 
 ```bash
-# Requires: git, pipx, npm
+# Requires: git, uv or pipx, npm
 curl -fsSL https://raw.githubusercontent.com/kuochuanpan/search-ads/main/install.sh | bash
 ```
 
@@ -96,12 +96,24 @@ cd ~/search-ads && ./launch.sh
 If you only need the command-line tool:
 
 ```bash
-# Using pipx (recommended)
+# Using uv (recommended)
+uv tool install git+https://github.com/kuochuanpan/search-ads.git
+
+# Using pipx
 pipx install git+https://github.com/kuochuanpan/search-ads.git
 
 # Or using pip
 pip install git+https://github.com/kuochuanpan/search-ads.git
 ```
+
+### Development Installation (from source)
+
+```bash
+git clone https://github.com/kuochuanpan/search-ads.git && cd search-ads
+uv venv --python python3.13 && source .venv/bin/activate && uv pip install -e ".[dev]"
+```
+
+> **⚠️ Python 3.14 is not supported** due to ChromaDB incompatibility. Use Python 3.13 or earlier.
 
 Then initialize:
 
@@ -224,6 +236,10 @@ cd ~/search-ads
 
 **CLI only:**
 ```bash
+# If installed with uv
+uv tool upgrade search-ads
+
+# If installed with pipx
 pipx upgrade search-ads
 ```
 
@@ -323,32 +339,34 @@ This starts both backend and frontend. Press `Ctrl+C` to stop.
 
 ### macOS Native App
 
-Search-ADS usually runs as a web application, but you can also build a native macOS application using Tauri.
+Search-ADS is also available as a standalone macOS desktop application.
 
-**Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases)
+**Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases) — grab the `.dmg` file for your architecture (Apple Silicon / Intel).
 
-**Prerequisites:**
+**Install from DMG:**
+1. Download `Search-ADS_<version>_aarch64.dmg` (Apple Silicon) from Releases
+2. Open the DMG and drag **Search-ADS** to **Applications**
+3. Launch from Applications — the app is signed with an Apple Developer ID and notarized by Apple, so it opens without Gatekeeper warnings.
 
-Complete steps 1–5 of [Build from Source](#build-from-source) first (this provides `uv`, the project venv with `pyinstaller`, and the frontend dependencies). Then add the Rust toolchain and Tauri CLI:
+**Build from Source:**
 
-```bash
-brew install rust                       # or: rustup.rs
-cargo install tauri-cli --version "^2.0"
-```
-
-**Build Instructions:**
+Prerequisites: Rust/Cargo ([rustup.rs](https://rustup.rs)), Node.js, npm, Python 3.13
 
 With the project venv active (so `pyinstaller` is on `PATH`):
 
 ```bash
-# 1. Build the Python sidecar (backend)
+# 1. Install Python dependencies
+uv venv --python python3.13 && source .venv/bin/activate
+uv pip install -e . && pip install pyinstaller
+
+# 2. Build the Python sidecar (backend)
 ./scripts/build-sidecar.sh
 
-# 2. Build the macOS application
+# 3. Build the macOS application
 cargo tauri build
 ```
 
-The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app`.
+The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app` and a DMG at `src-tauri/target/release/bundle/dmg/`.
 
 **Manual Start (for development):**
 
