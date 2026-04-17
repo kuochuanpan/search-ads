@@ -1,6 +1,6 @@
 [package]
 name = "search-ads"
-version = "1.0.0-beta"
+version = "1.0.0"
 description = "Search-ADS - Academic Paper Citation Manager"
 authors = ["Pan"]
 edition = "2021"

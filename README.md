@@ -1,6 +1,6 @@
 # Search-ADS
 
-![Version](https://img.shields.io/badge/version-1.0.0--beta-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![Tauri](https://img.shields.io/badge/tauri-v2-orange)
@@ -10,7 +10,7 @@
 
 Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search and LLM-powered analysis to make managing your research library effortless.
 
-**Version: 1.0.0-beta**
+**Version: 1.0.0**
 
 ## Screenshots
 
