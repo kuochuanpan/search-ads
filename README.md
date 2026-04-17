@@ -1,6 +1,6 @@
 # Search-ADS
 
-![Version](https://img.shields.io/badge/version-0.9.0--beta-blue)
+![Version](https://img.shields.io/badge/version-1.0.0--beta-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![Tauri](https://img.shields.io/badge/tauri-v2-orange)
@@ -10,7 +10,7 @@
 
 Search-ADS helps you find, organize, and cite scientific papers using NASA ADS (Astrophysics Data System). It combines semantic search and LLM-powered analysis to make managing your research library effortless.
 
-**Version: 0.9.0-beta**
+**Version: 1.0.0-beta**
 
 ## Screenshots
 
@@ -108,6 +108,70 @@ Then initialize:
 ```bash
 search-ads init
 ```
+
+### Build from Source
+
+Use this path if you want a local development environment (run tests, iterate on the backend/frontend, or build the macOS app).
+
+**1. Install prerequisites**
+
+macOS (Homebrew):
+
+```bash
+brew install git pipx node uv rust
+pipx ensurepath
+```
+
+Linux: install `git`, `pipx`, Node.js 18+, [`uv`](https://github.com/astral-sh/uv), and (optionally, for the Tauri build) the Rust toolchain from [rustup.rs](https://rustup.rs).
+
+**2. Clone the repository**
+
+```bash
+git clone https://github.com/kuochuanpan/search-ads.git
+cd search-ads
+```
+
+**3. Create a project environment with uv**
+
+This gives you an isolated Python env for running tests, the server, and the sidecar build:
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+The `[dev]` extra installs `pytest`, `ruff`, `black`, `mypy`, and `pyinstaller` (needed for the macOS sidecar).
+
+**4. Install the CLI globally with pipx**
+
+Keeping the CLI on `pipx` means `search-ads` is on your `PATH` regardless of which shell/venv is active:
+
+```bash
+pipx install . --force
+search-ads init   # creates ~/.search-ads/.env
+```
+
+Then edit `~/.search-ads/.env` and add your `ADS_API_KEY` (see [Configuration](#configuration)).
+
+**5. Install frontend dependencies**
+
+```bash
+cd frontend && npm install && cd ..
+```
+
+**6. Run the app in development**
+
+```bash
+./launch.sh           # starts backend + frontend together
+# or, manually:
+search-ads web        # backend on :9527
+cd frontend && npm run dev   # frontend on :5173
+```
+
+**7. (Optional) Build the macOS native app**
+
+See [macOS Native App](#macos-native-app) below.
 
 ### Configuration
 
@@ -255,6 +319,8 @@ cd ~/search-ads
 ./launch.sh
 ```
 
+This starts both backend and frontend. Press `Ctrl+C` to stop.
+
 ### macOS Native App
 
 Search-ADS usually runs as a web application, but you can also build a native macOS application using Tauri.
@@ -262,10 +328,17 @@ Search-ADS usually runs as a web application, but you can also build a native ma
 **Download:** [Latest Release](https://github.com/kuochuanpan/search-ads/releases)
 
 **Prerequisites:**
-- Rust and Cargo (install via [rustup.rs](https://rustup.rs))
-- Node.js and npm
+
+Complete steps 1–5 of [Build from Source](#build-from-source) first (this provides `uv`, the project venv with `pyinstaller`, and the frontend dependencies). Then add the Rust toolchain and Tauri CLI:
+
+```bash
+brew install rust                       # or: rustup.rs
+cargo install tauri-cli --version "^2.0"
+```
 
 **Build Instructions:**
+
+With the project venv active (so `pyinstaller` is on `PATH`):
 
 ```bash
 # 1. Build the Python sidecar (backend)
@@ -276,8 +349,6 @@ cargo tauri build
 ```
 
 The application will be built to `src-tauri/target/release/bundle/macos/Search-ADS.app`.
-
-This starts both backend and frontend. Press `Ctrl+C` to stop.
 
 **Manual Start (for development):**
 
@@ -302,6 +373,22 @@ Access the UI at `http://localhost:5173`
 | **Writing** | Paste LaTeX text and get citation suggestions |
 | **Import** | Add papers from ADS URLs, BibTeX files, or clipboard |
 | **Settings** | API keys, preferences, and database management |
+
+### Stopping the Server
+
+If you launched with `./launch.sh` or ran the backend/frontend manually, press `Ctrl+C` in the terminal to stop them cleanly.
+
+If a process was orphaned (e.g. the terminal was closed) and you see an error like `[Errno 48] address already in use` on the next launch, find and kill the leftover process by port:
+
+```bash
+# Backend (FastAPI on :9527)
+lsof -ti:9527 | xargs kill
+
+# Frontend (Vite dev server on :5173)
+lsof -ti:5173 | xargs kill
+```
+
+Add `-9` (e.g. `xargs kill -9`) only if the process refuses to exit. Use `lsof -i:9527` first if you want to confirm which process owns the port.
 
 ## Claude Code Integration
 

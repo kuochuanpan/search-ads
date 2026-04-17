@@ -1,12 +1,12 @@
 { pkgs ? import <nixpkgs> { system = "aarch64-darwin"; } }:
 
 pkgs.mkShell {
-  name = "python3.10";
-  
+  name = "search-ads-dev";
+
   buildInputs = with pkgs; [
-    python310  # Python 3.10，穩定且相容
-    python310Packages.pip
-    python310Packages.virtualenv
+    python312
+    python312Packages.pip
+    python312Packages.virtualenv
     # --- System Tools ---
     ffmpeg  # faster-whisper音訊處理
     git

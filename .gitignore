@@ -1,7 +1,19 @@
 # Environment
 .env
+.env.*
+!.env.example
 .envrc
 .direnv/
+
+# Apple signing / notarization secrets
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+*.keychain
+*.keychain-db
 
 # Python
 __pycache__/
@@ -52,6 +64,7 @@ src-tauri/target/
 
 # Editor / Tool specific
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 *.bak
 
 # Frontend

@@ -29,9 +29,17 @@ fi
 echo "    Target triple: $TARGET_TRIPLE"
 
 # Ensure PyInstaller is installed
-if ! pip show pyinstaller &> /dev/null; then
+if ! command -v pyinstaller &> /dev/null; then
     echo "==> Installing PyInstaller..."
-    pip install pyinstaller
+    if command -v uv &> /dev/null; then
+        uv pip install pyinstaller
+    elif python -m pip --version &> /dev/null; then
+        python -m pip install pyinstaller
+    else
+        echo "ERROR: pyinstaller not found and neither 'uv' nor 'pip' is available." >&2
+        echo "       Activate your project venv and run: uv pip install -e \".[dev]\"" >&2
+        exit 1
+    fi
 fi
 
 # Build with PyInstaller
